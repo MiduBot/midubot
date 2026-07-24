@@ -10,6 +10,7 @@ import { handleLinkCooldownCommand } from "@/features/link-cooldown";
 import { handleLinkNewcomerCommand } from "@/features/link-newcomer";
 import { handleNoteCommand, handleHistoryCommand, handleStatsCommand } from "@/features/mod-actions";
 import { handleEvalCommand } from "@/features/eval";
+import { handleAiCommand } from "@/features/ai";
 import {
   handleAimodCommand,
   handleModroleCommand,
@@ -114,6 +115,11 @@ const commands: Command[] = [
     name: "selfpromochannel",
     aliases: ["spc", "selfpromo"],
     execute: handleSelfpromochannelCommand,
+  },
+  {
+    name: "ai",
+    aliases: [],
+    execute: handleAiCommand,
   },
 ];
 

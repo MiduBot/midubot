@@ -374,4 +374,12 @@ export const en = {
     case_verdict_unknown: "unknown",
     case_none: "—",
   },
+  ai: {
+    no_permission: "You don't have permission to use this.",
+    usage: "Usage: `{prefix}ai <test>`",
+    testing: "🔄 Testing AI connection...",
+    ok: "✅ AI responds in {elapsed}ms (model {model}):\n```\n{response}\n```",
+    fail: "❌ Could not connect to AI. Check configuration.",
+    error: "❌ Error testing AI.",
+  },
 };
