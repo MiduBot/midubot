@@ -1,0 +1,12 @@
+---
+description: Caveman commits only — no AI co-author or generated trailers
+alwaysApply: true
+---
+
+# Commits
+
+When committing (only if the user asks):
+
+- Use **caveman-commit**: Conventional Commits, short subject, body only for non-obvious why.
+- **Never** add `Co-authored-by`, `Generated with …`, `Assisted-by`, or any AI/tool credit trailer.
+- Clean message only, e.g. `fix(mod): stop double-ban on rejoin`

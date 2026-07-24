@@ -1,0 +1,15 @@
+---
+description: Always use codebase-memory MCP for structural code exploration
+alwaysApply: true
+---
+
+# Codebase Memory MCP
+
+Prefer **codebase-memory-mcp** over Grep/Glob walks for architecture, symbols, callers, and impact.
+
+1. Confirm tools exist (`list_projects`, `search_graph`, `trace_path`, …).
+2. Index if needed: `index_repository(repo_path="/home/awsm/dev/midubot")`.
+3. Query the graph first; use Grep/Read only for text or uncovered files.
+
+If the MCP is missing: install from https://github.com/DeusData/codebase-memory-mcp  
+(`curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash`), ensure `.cursor/mcp.json` points at `~/.local/bin/codebase-memory-mcp`, restart the agent.

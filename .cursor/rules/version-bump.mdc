@@ -1,0 +1,16 @@
+---
+description: After finishing work, suggest a SemVer bump for package.json
+alwaysApply: true
+---
+
+# Version bump on finish
+
+When a task that changes product behavior is **complete**, suggest updating `package.json` version. Do not bump until the user agrees.
+
+SemVer (`MAJOR.MINOR.PATCH`):
+
+- **major** — breaking change
+- **minor** — new feature / command
+- **patch** — fix or small non-breaking chore
+
+Suggest commit style matching history: `chore: bump version to X.Y.Z`.
