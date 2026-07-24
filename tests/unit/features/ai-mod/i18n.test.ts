@@ -1,0 +1,65 @@
+import { describe, it, expect } from "bun:test";
+import { getTranslation } from "@/i18n";
+
+describe("aiMod i18n keys", () => {
+  it("es has all required aiMod keys", () => {
+    const t = getTranslation("es");
+    expect(t.aiMod).toBeDefined();
+    expect(typeof t.aiMod.flagged_malicious_title).toBe("string");
+    expect(typeof t.aiMod.flagged_selfpromo_title).toBe("string");
+    expect(typeof t.aiMod.flagged_selfpromo_bypass_title).toBe("string");
+    expect(typeof t.aiMod.precaution_title).toBe("string");
+    expect(typeof t.aiMod.field_author).toBe("string");
+    expect(typeof t.aiMod.field_channel).toBe("string");
+    expect(typeof t.aiMod.field_confidence).toBe("string");
+    expect(typeof t.aiMod.field_platform).toBe("string");
+    expect(typeof t.aiMod.field_reason).toBe("string");
+    expect(typeof t.aiMod.field_action).toBe("string");
+    expect(typeof t.aiMod.action_timeout).toBe("string");
+    expect(typeof t.aiMod.action_already_timeout).toBe("string");
+    expect(typeof t.aiMod.action_bypass_allowed).toBe("string");
+    expect(typeof t.aiMod.action_no_permission).toBe("string");
+    expect(typeof t.aiMod.action_alert_only).toBe("string");
+    expect(typeof t.aiMod.button_correct).toBe("string");
+    expect(typeof t.aiMod.button_incorrect).toBe("string");
+    expect(typeof t.aiMod.confirmed_by).toBe("string");
+    expect(typeof t.aiMod.marked_incorrect_by).toBe("string");
+    expect(typeof t.aiMod.timeout_removed).toBe("string");
+    expect(typeof t.aiMod.no_permission).toBe("string");
+    expect(typeof t.aiMod.case_already_resolved).toBe("string");
+    expect(typeof t.aiMod.precaution_desc).toBe("string");
+    expect(typeof t.aiMod.footer_case_id).toBe("string");
+    expect(typeof t.aiMod.feedback_action_case_resolved).toBe("string");
+    expect(typeof t.aiMod.feedback_action_prompt_pending).toBe("string");
+    expect(typeof t.aiMod.usage_aimod).toBe("string");
+    expect(typeof t.aiMod.usage_modrole).toBe("string");
+    expect(typeof t.aiMod.usage_ignorechannel).toBe("string");
+    expect(typeof t.aiMod.usage_notify).toBe("string");
+    expect(typeof t.aiMod.usage_selfpromochannel).toBe("string");
+    expect(typeof t.aiMod.enabled_on).toBe("string");
+    expect(typeof t.aiMod.enabled_off).toBe("string");
+    expect(typeof t.aiMod.enabled_status_on).toBe("string");
+    expect(typeof t.aiMod.enabled_status_off).toBe("string");
+    expect(typeof t.aiMod.added).toBe("string");
+    expect(typeof t.aiMod.removed).toBe("string");
+    expect(typeof t.aiMod.already_present).toBe("string");
+    expect(typeof t.aiMod.cases_empty).toBe("string");
+    expect(typeof t.aiMod.cases_header).toBe("string");
+    expect(typeof t.aiMod.cases_row).toBe("string");
+    expect(typeof t.aiMod.case_not_found).toBe("string");
+    expect(typeof t.aiMod.case_detail).toBe("string");
+    expect(typeof t.aiMod.case_status_pending).toBe("string");
+    expect(typeof t.aiMod.case_status_resolved).toBe("string");
+    expect(typeof t.aiMod.case_status_prompt_pending).toBe("string");
+    expect(typeof t.aiMod.case_verdict_malicious).toBe("string");
+    expect(typeof t.aiMod.case_verdict_selfpromo).toBe("string");
+    expect(typeof t.aiMod.case_verdict_unknown).toBe("string");
+    expect(typeof t.aiMod.case_none).toBe("string");
+  });
+
+  it("en has the same aiMod keys as es", () => {
+    const esKeys = Object.keys(getTranslation("es").aiMod).sort();
+    const enKeys = Object.keys(getTranslation("en").aiMod).sort();
+    expect(enKeys).toEqual(esKeys);
+  });
+});

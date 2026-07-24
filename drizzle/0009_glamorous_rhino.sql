@@ -1,0 +1,2 @@
+ALTER TABLE `guild_configs` ADD `link_newcomer_enabled` integer DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE `guild_configs` ADD `link_newcomer_threshold_ms` integer DEFAULT 604800000 NOT NULL;

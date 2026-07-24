@@ -1,0 +1,50 @@
+{
+  "name": "midubot",
+  "version": "3.5.1",
+  "description": "Professional Discord moderation and administration bot",
+  "private": true,
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "build:dev": "tsdown -w",
+    "build": "tsdown",
+    "dev": "node --watch dist/index.mjs",
+    "start": "bun src/index.ts",
+    "start-dev": "infisical run --env=dev --path=/ -- bun --watch src/index.ts",
+    "db:migrate": "drizzle-kit migrate",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:migrate:dev": "infisical run --env=dev --path=/ -- drizzle-kit migrate",
+    "db:generate:dev": "infisical run --env=dev --path=/ -- drizzle-kit generate",
+    "db:push:dev": "infisical run --env=dev --path=/ -- drizzle-kit push",
+    "db:studio:dev": "infisical run --env=dev --path=/ -- drizzle-kit studio",
+    "test": "bun test --isolate"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@types/pg": "^8.20.0",
+    "dotenv": "^17.4.1",
+    "drizzle-kit": "^0.31.10",
+    "tsdown": "^0.22.2"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.11",
+    "@libsql/client": "^0.17.3",
+    "ai": "7.0.30",
+    "chalk": "^5.6.2",
+    "discord.js": "^14.26.4",
+    "drizzle-orm": "^0.45.2",
+    "node-fetch": "^3.3.2",
+    "sharp": "^0.34.5",
+    "winston": "^3.19.0",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "bun": "1.3.12"
+  },
+  "packageManager": "bun@1.3.12"
+}
