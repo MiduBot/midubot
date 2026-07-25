@@ -1,6 +1,6 @@
 {
   "name": "midubot",
-  "version": "3.5.2",
+  "version": "3.6.0",
   "description": "Professional Discord moderation and administration bot",
   "private": true,
   "main": "src/index.ts",
