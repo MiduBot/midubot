@@ -22,7 +22,14 @@ const bypassMock = { isBypass: mock(async () => false) };
 const notifyMock = { list: mock(async () => []) };
 const contextMock = { buildContext: mock(async () => ({ examples: "", prompts: "" })) };
 const classifyMock = mock(async () => ({ ok: false, entries: [] }) as never);
-const imageDupMock = { checkImage: mock(async () => ({ flagged: false, reason: "" })) };
+const imageDupMock = {
+  checkImage: mock(async () => ({
+    flagged: false,
+    reason: "",
+    channelCount: 1,
+    matchedMessages: [],
+  })),
+};
 const casesMock = { insert: mock(async () => 1) };
 const logChannelMock = { getLogChannel: mock(async () => null) };
 
@@ -47,6 +54,15 @@ beforeEach(() => {
   modRoleMock.hasRole.mockImplementation(async () => true);
   classifyMock.mockImplementation(async () => ({ ok: false, entries: [] }) as never);
   classifyMock.mockClear();
+  casesMock.insert.mockClear();
+  casesMock.insert.mockImplementation(async () => 1);
+  imageDupMock.checkImage.mockClear();
+  imageDupMock.checkImage.mockImplementation(async () => ({
+    flagged: false,
+    reason: "",
+    channelCount: 1,
+    matchedMessages: [],
+  }));
 });
 
 describe("handleModMention", () => {
@@ -87,10 +103,12 @@ describe("handleModMention", () => {
     expect(classifyMock).toHaveBeenCalledTimes(1);
   });
 
-  it("creates a case for precaution candidates when classification fails", async () => {
+  it("on AI failure, still deletes text candidates (fallback action)", async () => {
+    classifyMock.mockImplementation(async () => ({ ok: false, entries: [] }) as never);
     const candidate = createMockMessage({ id: "cand1", content: "hola", channelId: "c1", guildId: "g1" });
     const msg = makeReportMessage("r1", { channelMessages: [candidate] });
     await handleModMention(msg);
+    expect(candidate.delete).toHaveBeenCalled();
     expect(casesMock.insert).toHaveBeenCalledTimes(1);
   });
 
@@ -102,6 +120,37 @@ describe("handleModMention", () => {
     const candidate = createMockMessage({ id: "cand1", content: "send me a DM", channelId: "c1", guildId: "g1" });
     const msg = makeReportMessage("r1", { channelMessages: [candidate] });
     await handleModMention(msg);
+    expect(candidate.delete).toHaveBeenCalled();
+  });
+
+  it("on mid-confidence flag (0.5–0.8), still deletes (no alert-only band)", async () => {
+    classifyMock.mockImplementation(async () => ({
+      ok: true,
+      entries: [{ index: 0, v: 1, c: 0.6, r: "posible estafa", p: 0 }],
+    }) as never);
+    const candidate = createMockMessage({ id: "cand1", content: "maybe scam", channelId: "c1", guildId: "g1" });
+    const msg = makeReportMessage("r1", { channelMessages: [candidate] });
+    await handleModMention(msg);
+    expect(candidate.delete).toHaveBeenCalled();
+  });
+
+  it("on unflagged image (no ≥3-channel spread), still deletes the candidate", async () => {
+    imageDupMock.checkImage.mockImplementation(async () => ({
+      flagged: false,
+      reason: "",
+      channelCount: 1,
+      matchedMessages: [],
+    }));
+    const candidate = createMockMessage({
+      id: "cand1",
+      content: "",
+      channelId: "c1",
+      guildId: "g1",
+      attachments: [{ url: "https://x/img.png", contentType: "image/png" }],
+    });
+    const msg = makeReportMessage("r1", { channelMessages: [candidate] });
+    await handleModMention(msg);
+    expect(imageDupMock.checkImage).toHaveBeenCalled();
     expect(candidate.delete).toHaveBeenCalled();
   });
 

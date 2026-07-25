@@ -8,10 +8,12 @@ import { logger } from "@/core/logger";
 
 const SCAN_MESSAGES_PER_CHANNEL = 50;
 const MAX_MATCHES = 100;
+const MIN_CHANNELS_TO_FLAG = 3;
 
 export interface ImageDuplicateResult {
   flagged: boolean;
   reason: string;
+  channelCount: number;
   matchedMessages: Message[];
 }
 
@@ -45,8 +47,9 @@ async function collectTextChannels(guild: Guild): Promise<Message["channel"][]> 
 export class ImageDuplicateService {
   /**
    * Scans non-ignored channels for messages whose image dhash matches the
-   * candidate's. Flags malicious when the SAME author has ≥ 2 such messages
-   * (the candidate counts as one). No side effects.
+   * candidate's. Flags for cross-channel sweep when the SAME author has the
+   * same image in ≥ 3 distinct channels (candidate channel counts as one).
+   * Always returns channelCount + matchedMessages for the handler to act.
    */
   static async checkImage(
     guild: Guild,
@@ -54,7 +57,7 @@ export class ImageDuplicateService {
   ): Promise<ImageDuplicateResult> {
     const urls = await candidateImageUrls(candidate);
     if (urls.length === 0) {
-      return { flagged: false, reason: "", matchedMessages: [] };
+      return { flagged: false, reason: "", channelCount: 0, matchedMessages: [] };
     }
 
     const targetDhashes = new Set<string>();
@@ -67,12 +70,12 @@ export class ImageDuplicateService {
       }
     }
     if (targetDhashes.size === 0) {
-      return { flagged: false, reason: "", matchedMessages: [] };
+      return { flagged: false, reason: "", channelCount: 0, matchedMessages: [] };
     }
 
     const candidateAuthorId = candidate.author.id;
     const matched: Message[] = [];
-    let sameAuthorHits = 1; // the candidate itself
+    const channelIds = new Set<string>([candidate.channelId]);
 
     const channels = await collectTextChannels(guild);
     for (const channel of channels) {
@@ -84,6 +87,7 @@ export class ImageDuplicateService {
         for (const [, msg] of fetched) {
           if (matched.length >= MAX_MATCHES) break;
           if (msg.id === candidate.id) continue;
+          if (msg.author.id !== candidateAuthorId) continue;
           const msgUrls: string[] = [];
           for (const att of msg.attachments.values()) {
             if (att.contentType?.startsWith("image/")) msgUrls.push(att.url);
@@ -93,10 +97,8 @@ export class ImageDuplicateService {
             try {
               const fp = await ImageHashService.downloadFingerprint(url);
               if (fp && targetDhashes.has(fp.dhash)) {
-                if (msg.author.id === candidateAuthorId) {
-                  sameAuthorHits++;
-                  if (matched.length < MAX_MATCHES) matched.push(msg);
-                }
+                channelIds.add(msg.channelId);
+                if (matched.length < MAX_MATCHES) matched.push(msg);
                 break;
               }
             } catch {
@@ -109,9 +111,20 @@ export class ImageDuplicateService {
       }
     }
 
-    if (sameAuthorHits >= 2) {
-      return { flagged: true, reason: "imagen spam cross-channel", matchedMessages: matched };
+    const channelCount = channelIds.size;
+    if (channelCount >= MIN_CHANNELS_TO_FLAG) {
+      return {
+        flagged: true,
+        reason: "imagen spam cross-channel",
+        channelCount,
+        matchedMessages: matched,
+      };
     }
-    return { flagged: false, reason: "", matchedMessages: [] };
+    return {
+      flagged: false,
+      reason: "",
+      channelCount,
+      matchedMessages: matched,
+    };
   }
 }

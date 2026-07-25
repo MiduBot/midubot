@@ -15,6 +15,11 @@ describe("aiMod i18n keys", () => {
     expect(typeof t.aiMod.field_platform).toBe("string");
     expect(typeof t.aiMod.field_reason).toBe("string");
     expect(typeof t.aiMod.field_action).toBe("string");
+    expect(typeof t.aiMod.confidence_high).toBe("string");
+    expect(typeof t.aiMod.confidence_low).toBe("string");
+    expect(typeof t.aiMod.reason_ai_fallback).toBe("string");
+    expect(typeof t.aiMod.reason_image_spread).toBe("string");
+    expect(typeof t.aiMod.reason_image_no_spread).toBe("string");
     expect(typeof t.aiMod.action_timeout).toBe("string");
     expect(typeof t.aiMod.action_already_timeout).toBe("string");
     expect(typeof t.aiMod.action_bypass_allowed).toBe("string");

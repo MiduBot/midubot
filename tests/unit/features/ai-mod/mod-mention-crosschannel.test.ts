@@ -90,6 +90,7 @@ beforeEach(() => {
   imageDupMock.mockResolvedValue({
     flagged: true,
     reason: "imagen spam cross-channel",
+    channelCount: 3,
     matchedMessages: [],
   });
   imagesMock.ImageService.addImage.mockClear();
@@ -170,6 +171,7 @@ describe("handleModMention — cross-channel + dedup", () => {
     imageDupMock.mockResolvedValueOnce({
       flagged: true,
       reason: "imagen spam cross-channel",
+      channelCount: 3,
       matchedMessages: [matchedMsg],
     });
     imagesMock.ImageHashService.downloadFingerprint.mockResolvedValueOnce({
@@ -195,6 +197,7 @@ describe("handleModMention — cross-channel + dedup", () => {
     imageDupMock.mockResolvedValue({
       flagged: true,
       reason: "imagen spam cross-channel",
+      channelCount: 3,
       matchedMessages: [matchedCache],
     });
     await handleModMention(report);

@@ -80,7 +80,10 @@ export async function handleMessageCreate(
     await enforceLinkCooldown(message);
     await applyLineFilter(message, client);
     await enforceJobGuard(message);
-    await handleModMention(message);
+    // ai-mod may wait a long time for the LLM; do not block the rest of the pipeline.
+    void handleModMention(message).catch((e) => {
+      logger.error("Error in handleModMention", e);
+    });
 
     if (message.attachments.size > 0 || containsImageUrl(message.content)) {
       await monitorImages(message);

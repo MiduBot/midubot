@@ -3,7 +3,7 @@ import { generateText } from "ai";
 import { env } from "@/config/env";
 import { logger } from "@/core/logger";
 
-const AI_TIMEOUT_MS = 15000;
+const AI_TIMEOUT_MS = 180_000;
 
 const clineFetch: typeof fetch = async (input, init) => {
   const response = await fetch(input, init);

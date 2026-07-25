@@ -39,6 +39,8 @@ describe("buildFlaggedEmbed", () => {
     );
     const data = embed.toJSON();
     expect(data.title).toContain("Spam");
+    const confField = (data.fields ?? []).find((f) => f.name === t.aiMod.field_confidence);
+    expect(confField?.value).toContain(t.aiMod.confidence_high);
     expect(components).toHaveLength(1);
     expect(components[0].components).toHaveLength(2);
     const customIds = components[0].components.map((b) =>

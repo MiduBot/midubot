@@ -25,7 +25,6 @@ import {
 } from "../services/alert-builder.service";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const ACTION_THRESHOLD = 0.8;
 const ALERT_THRESHOLD = 0.5;
 const CANDIDATE_LIMIT = 10;
 const BYPASS_PLATFORMS = new Set([1, 2, 3]);
@@ -105,14 +104,15 @@ export async function handleModMention(message: Message): Promise<void> {
         context,
       );
       if (!result.ok) {
-        // AI failure → all text candidates go to precaution.
+        // AI failure → still act (timeout + delete + alert + feedback).
         for (const c of textCandidates) {
-          precautionCandidates.push({
+          flagged.push({
             message: c.message,
             verdict: 1,
             confidence: 0,
             platform: 0,
-            reason: t.aiMod.precaution_title,
+            reason: t.aiMod.reason_ai_fallback,
+            fromImage: false,
           });
         }
       } else {
@@ -133,48 +133,29 @@ export async function handleModMention(message: Message): Promise<void> {
       }
     }
 
-    // Image route: cross-channel duplicate scan.
+    // Image route: novel images (known DB hashes are monitorImages' job).
+    // Always act; sweep cross-channel only when ≥3 channels flagged.
     for (const imgMsg of imageCandidates) {
       const dup = await ImageDuplicateService.checkImage(message.guild, imgMsg);
-      if (dup.flagged) {
-        flagged.push({
-          message: imgMsg,
-          verdict: 1,
-          confidence: 1,
-          platform: 0,
-          reason: dup.reason,
-          fromImage: true,
-          crossChannelMessages: dup.matchedMessages,
-        });
-      } else {
-        // Not analyzable → precaution.
-        precautionCandidates.push({
-          message: imgMsg,
-          verdict: 1,
-          confidence: 0,
-          platform: 0,
-          reason: t.aiMod.precaution_title,
-        });
-      }
+      flagged.push({
+        message: imgMsg,
+        verdict: 1,
+        confidence: dup.flagged ? 1 : 0.5,
+        platform: 0,
+        reason: dup.flagged
+          ? dup.reason || t.aiMod.reason_image_spread
+          : t.aiMod.reason_image_no_spread,
+        fromImage: true,
+        crossChannelMessages: dup.flagged ? dup.matchedMessages : undefined,
+      });
     }
 
-    // Apply bypass + confidence bands + actions.
+    // Apply bypass; any remaining flag is actionable (no alert-only band).
     const actionable: FlaggedCandidate[] = [];
     for (const f of flagged) {
       if (f.verdict === 2 && BYPASS_PLATFORMS.has(f.platform)) {
         const inBypass = await SelfpromoBypassService.isBypass(guildId, f.message.channelId);
         if (inBypass) continue; // allowed self-promo: no log, no action
-      }
-      if (f.confidence < ACTION_THRESHOLD) {
-        // Borderline: alert-only, no action.
-        precautionCandidates.push({
-          message: f.message,
-          verdict: f.verdict,
-          confidence: f.confidence,
-          platform: f.platform,
-          reason: f.reason,
-        });
-        continue;
       }
       actionable.push(f);
     }

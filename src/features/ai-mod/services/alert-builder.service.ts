@@ -53,10 +53,16 @@ export function buildFlaggedEmbed(
     : t.aiMod.flagged_malicious_title;
   const color = isSelfpromo && input.platform !== 4 ? 0xffaa00 : 0xff4d4d;
 
+  const highConfidence = input.confidence >= 0.8;
+  const confidenceBand = highConfidence
+    ? t.aiMod.confidence_high
+    : t.aiMod.confidence_low;
+  const confidenceValue = `${Math.round(input.confidence * 100)}% (${confidenceBand})`;
+
   const fields = [
     { name: t.aiMod.field_author, value: `${input.authorTag} (${input.authorId})`, inline: true },
     { name: t.aiMod.field_channel, value: `<#${input.channelId}>`, inline: true },
-    { name: t.aiMod.field_confidence, value: `${Math.round(input.confidence * 100)}%`, inline: true },
+    { name: t.aiMod.field_confidence, value: confidenceValue, inline: true },
   ];
   if (isSelfpromo) {
     fields.push({ name: t.aiMod.field_platform, value: PLATFORM_LABEL[input.platform] ?? "—", inline: true });
@@ -64,8 +70,12 @@ export function buildFlaggedEmbed(
   fields.push({ name: t.aiMod.field_reason, value: (input.reason || "—").slice(0, 1024), inline: false });
   fields.push({ name: t.aiMod.field_action, value: input.actionLabel, inline: false });
 
+  // Low-confidence / fallback: amber; high-confidence malicious: red; selfpromo platform bypass-ish: amber.
+  const embedColor =
+    !highConfidence ? 0xffaa00 : color;
+
   const embed = new EmbedBuilder()
-    .setColor(color)
+    .setColor(embedColor)
     .setTitle(title)
     .addFields(fields)
     .setFooter({ text: t.aiMod.footer_case_id.replace("{id}", String(input.caseId)) })

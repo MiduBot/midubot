@@ -25,13 +25,15 @@ function makeMessage(
   id: string,
   authorId: string,
   imageUrl: string,
+  channelId: string,
 ): Message {
   return {
     id,
+    channelId,
     author: { id: authorId, bot: false } as never,
     content: "",
     attachments: new Map([["a", { url: imageUrl, contentType: "image/png" }]]) as never,
-    channel: { id: "c1" } as never,
+    channel: { id: channelId } as never,
   } as unknown as Message;
 }
 
@@ -56,30 +58,47 @@ function makeGuild(messagesByChannel: Record<string, Message[]>): Guild {
 }
 
 describe("ImageDuplicateService.checkImage", () => {
-  it("flags when the same author reposts the same image across channels", async () => {
-    const candidate = makeMessage("m0", "spammer", "https://x/imgA.png");
+  it("flags when the same author has the image in ≥3 channels", async () => {
+    const candidate = makeMessage("m0", "spammer", "https://x/imgA.png", "c1");
     const guild = makeGuild({
       c1: [candidate],
-      c2: [makeMessage("m1", "spammer", "https://x/imgA.png")],
+      c2: [makeMessage("m1", "spammer", "https://x/imgA.png", "c2")],
+      c3: [makeMessage("m2", "spammer", "https://x/imgA.png", "c3")],
     });
     const r = await ImageDuplicateService.checkImage(guild as never, candidate);
     expect(r.flagged).toBe(true);
+    expect(r.channelCount).toBe(3);
+    expect(r.matchedMessages.length).toBe(2);
   });
 
-  it("does NOT flag when duplicates are from different authors", async () => {
-    const candidate = makeMessage("m0", "spammer", "https://x/imgA.png");
+  it("does NOT flag with only 2 channels (same author)", async () => {
+    const candidate = makeMessage("m0", "spammer", "https://x/imgA.png", "c1");
     const guild = makeGuild({
       c1: [candidate],
-      c2: [makeMessage("m1", "otheruser", "https://x/imgA.png")],
+      c2: [makeMessage("m1", "spammer", "https://x/imgA.png", "c2")],
     });
     const r = await ImageDuplicateService.checkImage(guild as never, candidate);
     expect(r.flagged).toBe(false);
+    expect(r.channelCount).toBe(2);
+  });
+
+  it("does NOT flag when duplicates are from different authors", async () => {
+    const candidate = makeMessage("m0", "spammer", "https://x/imgA.png", "c1");
+    const guild = makeGuild({
+      c1: [candidate],
+      c2: [makeMessage("m1", "otheruser", "https://x/imgA.png", "c2")],
+      c3: [makeMessage("m2", "otheruser2", "https://x/imgA.png", "c3")],
+    });
+    const r = await ImageDuplicateService.checkImage(guild as never, candidate);
+    expect(r.flagged).toBe(false);
+    expect(r.channelCount).toBe(1);
   });
 
   it("does NOT flag when only the candidate has the image", async () => {
-    const candidate = makeMessage("m0", "spammer", "https://x/imgA.png");
+    const candidate = makeMessage("m0", "spammer", "https://x/imgA.png", "c1");
     const guild = makeGuild({ c1: [candidate] });
     const r = await ImageDuplicateService.checkImage(guild as never, candidate);
     expect(r.flagged).toBe(false);
+    expect(r.channelCount).toBe(1);
   });
 });
