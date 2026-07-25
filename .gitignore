@@ -42,3 +42,5 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .kilo/
 .openlogs/
 ai-test.ts
+# git worktrees
+.worktrees/
