@@ -10,6 +10,7 @@ const envSchema = z.object({
   TURSO_AUTH_TOKEN: z.string().min(1, "TURSO_AUTH_TOKEN is required"),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   LOG_LEVEL: z.enum(["error", "warn", "info", "http", "verbose", "debug", "silly"]).default("info"),
+  HEALTH_PORT: z.coerce.number().int().positive().default(3000),
   AI_API_URL: z.string().url().optional(),
   AI_API_KEY: z.string().optional(),
   AI_MODEL: z.string().default("deepseek-v4-flash"),
