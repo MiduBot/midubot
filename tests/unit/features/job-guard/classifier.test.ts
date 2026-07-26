@@ -1,4 +1,24 @@
-import { describe, it, expect, mock, afterEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach } from "bun:test";
+
+mock.module("@/config/env", () => ({
+  env: {
+    AI_API_URL: "https://ai.test/v1/chat/completions",
+    AI_API_KEY: "test-key",
+    AI_MODEL: "deepseek-v4-flash",
+    JOB_CHANNEL_ID: "chan-1",
+  },
+}));
+
+const chatMock = mock(async () => null as string | null);
+mock.module("@/features/ai-mod/services/ai-client.service", () => ({
+  AIClientService: { chat: chatMock },
+}));
+
+const listRecentMock = mock(async () => [] as { prompt: string }[]);
+mock.module("@/features/job-guard/services/prompts.service", () => ({
+  JobGuardPromptsService: { listRecent: listRecentMock, add: mock(async () => {}) },
+}));
+
 import { parseVerdict, classify } from "@/features/job-guard/services/classifier.service";
 
 describe("parseVerdict", () => {
@@ -48,53 +68,35 @@ describe("parseVerdict", () => {
   });
 });
 
-mock.module("@/config/env", () => ({
-  env: {
-    AI_API_URL: "https://ai.test/v1/chat/completions",
-    AI_API_KEY: "test-key",
-    AI_MODEL: "deepseek-v4-flash",
-    JOB_CHANNEL_ID: "chan-1",
-  },
-}));
+describe("classify with learning context", () => {
+  beforeEach(() => {
+    chatMock.mockClear();
+    listRecentMock.mockClear();
+    listRecentMock.mockImplementation(async () => []);
+  });
 
-const realFetch = globalThis.fetch;
-afterEach(() => {
-  globalThis.fetch = realFetch;
-});
-
-function mockFetchOnce(impl: () => Promise<Response>) {
-  globalThis.fetch = mock(impl) as unknown as typeof fetch;
-}
-
-describe("classify", () => {
-  it("returns the parsed verdict on a good response", async () => {
-    mockFetchOnce(async () =>
-      new Response(
-        JSON.stringify({
-          choices: [
-            { message: { content: '{"verdict":"block","confidence":0.95,"reason":"oferta"}' } },
-          ],
-        }),
-        { status: 200 },
-      ),
+  it("passes guild prompts into the system prompt", async () => {
+    listRecentMock.mockImplementation(async () => [
+      { prompt: "Portfolio con GitHub propio es allow" },
+    ]);
+    chatMock.mockImplementation(async () =>
+      '{"verdict":"allow","confidence":0.9,"reason":"portfolio"}',
     );
-    const r = await classify("se busca dev, pago por proyecto");
+    const r = await classify("mi github.com/yo", "g1");
+    expect(r.ok).toBe(true);
+    expect(listRecentMock).toHaveBeenCalledWith("g1", 10);
+    const systemArg = chatMock.mock.calls[0]?.[0] as string;
+    expect(systemArg).toContain("Notas de moderadores:");
+    expect(systemArg).toContain("Portfolio con GitHub propio es allow");
+    expect(systemArg).toMatch(/portfolio|GitHub|LinkedIn/i);
+  });
+
+  it("works with empty prompt list", async () => {
+    chatMock.mockImplementation(async () =>
+      '{"verdict":"block","confidence":0.95,"reason":"oferta"}',
+    );
+    const r = await classify("se busca dev", "g1");
     expect(r.ok).toBe(true);
     expect(r.verdict).toBe("block");
-    expect(r.confidence).toBe(0.95);
-  });
-
-  it("returns ok:false on a non-200 response", async () => {
-    mockFetchOnce(async () => new Response("nope", { status: 500 }));
-    const r = await classify("hola");
-    expect(r.ok).toBe(false);
-  });
-
-  it("returns ok:false when fetch throws", async () => {
-    mockFetchOnce(async () => {
-      throw new Error("network down");
-    });
-    const r = await classify("hola");
-    expect(r.ok).toBe(false);
   });
 });

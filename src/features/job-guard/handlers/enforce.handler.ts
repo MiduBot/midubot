@@ -18,7 +18,7 @@ export async function enforceJobGuard(message: Message): Promise<void> {
   const content = message.content?.trim();
   if (!content) return;
 
-  const result = await classify(content.slice(0, MAX_INPUT));
+  const result = await classify(content.slice(0, MAX_INPUT), message.guild.id);
   if (!result.ok || result.verdict !== "block") return;
 
   const shouldDelete = (result.confidence ?? 0) >= BLOCK_THRESHOLD;
