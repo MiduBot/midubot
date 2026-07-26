@@ -7,3 +7,4 @@ export * from "./link-cooldown";
 export * from "./mod-actions";
 export * from "./mod-notes";
 export * from "./ai-mod";
+export * from "./job-guard";

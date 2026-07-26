@@ -78,6 +78,13 @@
       "when": 1784836140811,
       "tag": "0010_previous_whizzer",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1785024387245,
+      "tag": "0011_eminent_prodigy",
+      "breakpoints": true
     }
   ]
 }
