@@ -1,4 +1,4 @@
-import { ChannelType, EmbedBuilder, type Message } from "discord.js";
+import { ChannelType, EmbedBuilder, PermissionFlagsBits, type Message } from "discord.js";
 import { env } from "@/config/env";
 import { classify, type ClassifyResult } from "../services/classifier.service";
 import { safeDelete } from "@/core/discord/moderation";
@@ -12,6 +12,8 @@ export async function enforceJobGuard(message: Message): Promise<void> {
   if (!env.JOB_CHANNEL_ID || !env.AI_API_URL || !env.AI_API_KEY) return;
   if (message.channelId !== env.JOB_CHANNEL_ID) return;
   if (!message.guild) return;
+
+  if (message.member?.permissions.has(PermissionFlagsBits.ManageMessages)) return;
 
   const content = message.content?.trim();
   if (!content) return;

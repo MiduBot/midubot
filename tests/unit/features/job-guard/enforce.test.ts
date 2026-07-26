@@ -44,6 +44,18 @@ describe("enforceJobGuard", () => {
     expect(msg.delete).not.toHaveBeenCalled();
   });
 
+  it("skips authors with ManageMessages (no AI call)", async () => {
+    setVerdict({ ok: true, verdict: "block", confidence: 0.95, reason: "aviso" });
+    const msg = createMockMessage({
+      channelId: "chan-1",
+      content: "Por favor, no evitar conversaciones por aquí",
+      manageMessages: true,
+    });
+    await enforceJobGuard(msg);
+    expect(classifyMock).not.toHaveBeenCalled();
+    expect(msg.delete).not.toHaveBeenCalled();
+  });
+
   it("ignores empty messages (no AI call)", async () => {
     const msg = createMockMessage({ channelId: "chan-1", content: "   " });
     await enforceJobGuard(msg);

@@ -25,6 +25,7 @@ export interface MockMessageOptions {
   }>;
   deletable?: boolean;
   memberModeratable?: boolean;
+  manageMessages?: boolean;
 }
 
 export function createMockUser(
@@ -152,6 +153,17 @@ export function createMockMessage(
   const member = createMockMember({
     id: author.id,
     moderatable: opts.memberModeratable ?? true,
+    permissions: {
+      has: (perm: string | bigint) => {
+        if (!opts.manageMessages) return false;
+        const key = String(perm);
+        return (
+          key === "ManageMessages" ||
+          key.includes("ManageMessages") ||
+          key === "8192"
+        );
+      },
+    },
   });
 
   const replyTarget = {
