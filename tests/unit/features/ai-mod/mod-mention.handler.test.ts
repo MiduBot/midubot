@@ -95,6 +95,46 @@ describe("handleModMention", () => {
     expect(classifyMock).not.toHaveBeenCalled();
   });
 
+  it("skips last-10 candidates whose author has ManageMessages", async () => {
+    const candidate = createMockMessage({
+      id: "cand1",
+      content: "staff post",
+      channelId: "c1",
+      guildId: "g1",
+      manageMessages: true,
+    });
+    const msg = makeReportMessage("r1", { channelMessages: [candidate] });
+    await handleModMention(msg);
+    expect(classifyMock).not.toHaveBeenCalled();
+    expect(candidate.delete).not.toHaveBeenCalled();
+  });
+
+  it("skips reply target when author has ManageMessages", async () => {
+    const candidate = createMockMessage({
+      id: "ref1",
+      content: "staff reply",
+      channelId: "c1",
+      guildId: "g1",
+      manageMessages: true,
+    });
+    const channel = createMockTextChannel({
+      id: "c1",
+      guildId: "g1",
+      messagesFetchResult: async (arg: unknown) => {
+        if (arg === "ref1") return candidate;
+        return new Map([[candidate.id, candidate]]);
+      },
+    });
+    const guild = createMockGuild({ id: "g1", channels: new Map([["c1", channel]]) });
+    const msg = makeReportMessage("r1");
+    (msg as unknown as { guild: unknown }).guild = guild;
+    (msg as unknown as { channel: unknown }).channel = channel;
+    (msg as unknown as { reference: { messageId: string } }).reference = { messageId: "ref1" };
+    await handleModMention(msg);
+    expect(classifyMock).not.toHaveBeenCalled();
+    expect(candidate.delete).not.toHaveBeenCalled();
+  });
+
   it("classifies a clean/inconclusive batch without throwing (no log channel)", async () => {
     classifyMock.mockImplementation(async () => ({ ok: true, entries: [] }) as never);
     const candidate = createMockMessage({ id: "cand1", content: "hola", channelId: "c1", guildId: "g1" });

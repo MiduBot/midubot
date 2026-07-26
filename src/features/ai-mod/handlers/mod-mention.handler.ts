@@ -259,6 +259,7 @@ async function resolveCandidates(message: Message): Promise<Message[]> {
   if (message.reference?.messageId) {
     try {
       const ref = await message.channel.messages.fetch(message.reference.messageId);
+      if (ref.member?.permissions.has(PermissionFlagsBits.ManageMessages)) return [];
       return [ref];
     } catch (e) {
       logger.warn(`ai-mod: reply fetch failed, falling back to last-10: ${e}`);
@@ -272,6 +273,7 @@ async function resolveCandidates(message: Message): Promise<Message[]> {
       if (m.id === message.id) continue;
       if (m.author.id === message.author.id) continue;
       if (m.author.bot) continue;
+      if (m.member?.permissions.has(PermissionFlagsBits.ManageMessages)) continue;
       out.push(m);
     }
     return out;
