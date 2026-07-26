@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { ChannelType } from "discord.js";
 import { createMockMessage } from "../../../mocks/discord";
 
 // Env: feature enabled, target channel = "chan-1".
@@ -20,9 +21,14 @@ mock.module("@/features/job-guard/services/classifier.service", () => ({
   classify: classifyMock,
 }));
 
-// No log channel configured -> notifyMods takes the logger-only branch (no send).
+const insertCaseMock = mock(async () => 7);
+mock.module("@/features/job-guard/services/cases.service", () => ({
+  JobGuardCasesService: { insert: insertCaseMock },
+}));
+
+const getLogChannelMock = mock(async (): Promise<string | null> => null);
 mock.module("@/features/log-channel", () => ({
-  LogChannelService: { getLogChannel: async () => null },
+  LogChannelService: { getLogChannel: getLogChannelMock },
 }));
 
 import { enforceJobGuard } from "@/features/job-guard/handlers/enforce.handler";
@@ -33,6 +39,9 @@ function setVerdict(v: { ok: boolean; verdict?: string; confidence?: number; rea
 
 beforeEach(() => {
   classifyMock.mockClear();
+  insertCaseMock.mockClear();
+  insertCaseMock.mockImplementation(async () => 7);
+  getLogChannelMock.mockImplementation(async () => null);
   setVerdict({ ok: false });
 });
 
@@ -101,6 +110,27 @@ describe("enforceJobGuard", () => {
     await enforceJobGuard(msg);
     expect(classifyMock).not.toHaveBeenCalled();
     expect(msg.delete).not.toHaveBeenCalled();
+  });
+
+  it("inserts a case and attaches feedback buttons on block", async () => {
+    setVerdict({ ok: true, verdict: "block", confidence: 0.9, reason: "oferta" });
+    getLogChannelMock.mockImplementation(async () => "log-1");
+    const sendMock = mock(async () => ({}));
+    const msg = createMockMessage({ channelId: "chan-1", content: "se busca dev" });
+    msg.guild!.channels.fetch = mock(async (id: string) => {
+      if (id === "log-1") {
+        return { type: ChannelType.GuildText, send: sendMock } as never;
+      }
+      return null;
+    });
+    await enforceJobGuard(msg);
+    expect(insertCaseMock).toHaveBeenCalled();
+    expect(sendMock).toHaveBeenCalled();
+    const payload = JSON.stringify(sendMock.mock.calls[0]?.[0]);
+    expect(payload).toContain("jobguard_7_correct");
+    expect(payload).toContain("jobguard_7_incorrect");
+    expect(payload).toContain("Correcto");
+    expect(payload).toContain("Incorrecto");
   });
 
   it("returns early if feature is disabled (env vars not set)", async () => {

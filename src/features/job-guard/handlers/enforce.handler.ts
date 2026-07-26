@@ -1,6 +1,15 @@
-import { ChannelType, EmbedBuilder, PermissionFlagsBits, type Message } from "discord.js";
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChannelType,
+  EmbedBuilder,
+  PermissionFlagsBits,
+  type Message,
+} from "discord.js";
 import { env } from "@/config/env";
 import { classify, type ClassifyResult } from "../services/classifier.service";
+import { JobGuardCasesService } from "../services/cases.service";
 import { safeDelete } from "@/core/discord/moderation";
 import { LogChannelService } from "@/features/log-channel";
 import { logger } from "@/core/logger";
@@ -24,7 +33,27 @@ export async function enforceJobGuard(message: Message): Promise<void> {
   const shouldDelete = (result.confidence ?? 0) >= BLOCK_THRESHOLD;
   const deleted = shouldDelete ? await safeDelete(message) : false;
 
-  await notifyMods(message, content, result, deleted);
+  let caseId = 0;
+  try {
+    caseId = await JobGuardCasesService.insert({
+      guildId: message.guild.id,
+      authorId: message.author.id,
+      channelId: message.channelId,
+      messageId: message.id,
+      content: content.slice(0, MAX_INPUT),
+      verdict: "block",
+      confidence: result.confidence ?? 0,
+      reason: result.reason ?? "",
+      deleted,
+    });
+    if (caseId === 0) {
+      logger.warn("job-guard: case insert returned no id");
+    }
+  } catch (e) {
+    logger.warn(`job-guard: failed to insert case: ${e}`);
+  }
+
+  await notifyMods(message, content, result, deleted, caseId);
 }
 
 async function notifyMods(
@@ -32,6 +61,7 @@ async function notifyMods(
   originalText: string,
   result: ClassifyResult,
   deleted: boolean,
+  caseId: number,
 ): Promise<void> {
   try {
     const guildId = message.guild!.id;
@@ -73,7 +103,31 @@ async function notifyMods(
       )
       .setTimestamp();
 
-    await logChannel.send({ embeds: [embed] });
+    const embedWithFooter =
+      caseId > 0
+        ? embed.setFooter({ text: `case_id: ${caseId}` })
+        : embed;
+
+    const sendPayload: {
+      embeds: ReturnType<EmbedBuilder["setTimestamp"]>[];
+      components?: ActionRowBuilder<ButtonBuilder>[];
+    } = { embeds: [embedWithFooter] };
+
+    if (caseId > 0) {
+      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`jobguard_${caseId}_correct`)
+          .setLabel("Correcto")
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`jobguard_${caseId}_incorrect`)
+          .setLabel("Incorrecto")
+          .setStyle(ButtonStyle.Danger),
+      );
+      sendPayload.components = [row];
+    }
+
+    await logChannel.send(sendPayload);
   } catch (e) {
     logger.warn(`job-guard: failed to notify mods: ${e}`);
   }
