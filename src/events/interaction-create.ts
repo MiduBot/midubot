@@ -7,6 +7,7 @@ import {
   handleImagesModalInteraction,
 } from "@/features/images";
 import { handleFeedbackButton } from "@/features/ai-mod";
+import { handleJobGuardFeedbackButton } from "@/features/job-guard";
 import { WhitelistService } from "@/features/whitelist";
 import { LanguageService } from "@/features/language";
 import { getTranslation } from "@/i18n";
@@ -50,6 +51,10 @@ export async function handleInteractionCreate(
     if (interaction.isButton()) {
       if (interaction.customId.startsWith("aimod_")) {
         await handleFeedbackButton(interaction);
+        return;
+      }
+      if (interaction.customId.startsWith("jobguard_")) {
+        await handleJobGuardFeedbackButton(interaction);
         return;
       }
       if (interaction.customId.startsWith("images_")) {
