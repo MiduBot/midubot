@@ -10,15 +10,10 @@
     "build": "tsdown",
     "dev": "node --watch dist/index.mjs",
     "start": "bun src/index.ts",
-    "start-dev": "infisical run --env=dev --path=/ -- bun --watch src/index.ts",
     "db:migrate": "drizzle-kit migrate",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:migrate:dev": "infisical run --env=dev --path=/ -- drizzle-kit migrate",
-    "db:generate:dev": "infisical run --env=dev --path=/ -- drizzle-kit generate",
-    "db:push:dev": "infisical run --env=dev --path=/ -- drizzle-kit push",
-    "db:studio:dev": "infisical run --env=dev --path=/ -- drizzle-kit studio",
     "test": "bun test --isolate"
   },
   "devDependencies": {
