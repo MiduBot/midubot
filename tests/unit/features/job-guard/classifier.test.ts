@@ -99,4 +99,32 @@ describe("classify with learning context", () => {
     expect(r.ok).toBe(true);
     expect(r.verdict).toBe("block");
   });
+
+  it("still classifies when listRecent throws", async () => {
+    listRecentMock.mockImplementation(async () => {
+      throw new Error("db down");
+    });
+    chatMock.mockImplementation(async () =>
+      '{"verdict":"allow","confidence":0.8,"reason":"ok"}',
+    );
+    const r = await classify("mi portfolio", "g1");
+    expect(r.ok).toBe(true);
+    expect(r.verdict).toBe("allow");
+    const systemArg = chatMock.mock.calls[0]?.[0] as string;
+    expect(systemArg).not.toContain("Notas de moderadores:");
+  });
+
+  it("includes note hardening before JSON rule when notes present", async () => {
+    listRecentMock.mockImplementation(async () => [{ prompt: "ejemplo" }]);
+    chatMock.mockImplementation(async () =>
+      '{"verdict":"block","confidence":0.9,"reason":"x"}',
+    );
+    await classify("msg", "g1");
+    const systemArg = chatMock.mock.calls[0]?.[0] as string;
+    const notesIdx = systemArg.indexOf("Notas de moderadores:");
+    const jsonIdx = systemArg.indexOf("Responde SOLO JSON");
+    expect(notesIdx).toBeGreaterThan(-1);
+    expect(jsonIdx).toBeGreaterThan(notesIdx);
+    expect(systemArg).toContain("no anulan las reglas de seguridad");
+  });
 });

@@ -10,7 +10,8 @@ Responde en español. SOLO la nota, sin JSON ni markdown.`;
 
 function buildUser(content: string, verdict: string, c: number, r: string): string {
   return [
-    `Mensaje clasificado: ${content}`,
+    "Mensaje clasificado:",
+    `<mensaje>\n${content}\n</mensaje>`,
     `Veredicto dado: ${verdict} (allow|block)`,
     `Confidence dado: ${c}`,
     `Razón dada: ${r}`,

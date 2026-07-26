@@ -51,9 +51,31 @@ describe("JobGuardCasesService", () => {
 });
 
 describe("JobGuardPromptsService", () => {
+  beforeEach(() => {
+    insertValues.mockClear();
+    promptsFindMany.mockClear();
+  });
+
   it("listRecent returns prompt rows", async () => {
     promptsFindMany.mockImplementation(async () => [{ prompt: "nota" }]);
     const rows = await JobGuardPromptsService.listRecent("g1", 10);
     expect(rows).toEqual([{ prompt: "nota" }]);
+  });
+
+  it("listRecent returns [] on db error", async () => {
+    promptsFindMany.mockImplementation(async () => {
+      throw new Error("db");
+    });
+    expect(await JobGuardPromptsService.listRecent("g1", 10)).toEqual([]);
+  });
+
+  it("add truncates prompt and sets createdAt", async () => {
+    const long = "x".repeat(400);
+    await JobGuardPromptsService.add("g1", long);
+    expect(insertValues).toHaveBeenCalledWith({
+      guildId: "g1",
+      prompt: "x".repeat(300),
+      createdAt: expect.any(Date),
+    });
   });
 });
