@@ -9,6 +9,7 @@ import { enforceLinkNewcomer } from "@/features/link-newcomer";
 import { applyLineFilter } from "@/features/line-filter";
 import { enforceJobGuard } from "@/features/job-guard";
 import { handleModMention } from "@/features/ai-mod";
+import { handleChatbot } from "@/features/ai";
 import { monitorImages } from "@/features/images";
 import { containsImageUrl } from "@/core/discord/moderation";
 import { logger } from "@/core/logger";
@@ -83,6 +84,9 @@ export async function handleMessageCreate(
     // ai-mod may wait a long time for the LLM; do not block the rest of the pipeline.
     void handleModMention(message).catch((e) => {
       logger.error("Error in handleModMention", e);
+    });
+    void handleChatbot(message).catch((e) => {
+      logger.error("Error in handleChatbot", e);
     });
 
     if (message.attachments.size > 0 || containsImageUrl(message.content)) {

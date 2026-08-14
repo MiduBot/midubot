@@ -1,4 +1,4 @@
-export { AIClientService } from "./services/ai-client.service";
+export { AIClientService, type ChatTurn } from "./services/ai-client.service";
 export {
   classifyBatch,
   parseBatch,

@@ -1,9 +1,10 @@
-import { Message } from "discord.js";
+import { ChannelType, Message, PermissionFlagsBits } from "discord.js";
 import { env, isSuperdev } from "@/config/env";
 import { AIClientService } from "@/features/ai-mod";
 import { LanguageService } from "@/features/language";
 import { getTranslation } from "@/i18n";
 import { logger } from "@/core/logger";
+import { AiChatConfigService } from "../services/ai-chat-config.service";
 
 const TEST_SYSTEM = "Responde de forma breve y concisa. No uses markdown.";
 const TEST_USER = "Di 'La IA está funcionando correctamente' y nada más.";
@@ -16,24 +17,135 @@ export async function handleAiCommand(
   const guildId = message.guild?.id;
   const lang = guildId ? await LanguageService.getLanguage(guildId) : "es";
   const t = getTranslation(lang);
-
-  if (!isSuperdev(message.author.id)) {
-    await message.reply(t.ai.no_permission);
-    return;
-  }
+  const usage = t.ai.usage.replace("{prefix}", prefix);
 
   if (args.length < 1) {
-    await message.reply(t.ai.usage.replace("{prefix}", prefix));
+    await message.reply(usage);
     return;
   }
 
   const sub = args[0].toLowerCase();
-  if (sub !== "test") {
-    await message.reply(t.ai.usage.replace("{prefix}", prefix));
+
+  if (sub === "test") {
+    if (!isSuperdev(message.author.id)) {
+      await message.reply(t.ai.no_permission);
+      return;
+    }
+    await runTest(message, t);
     return;
   }
 
-  await runTest(message, t);
+  if (!guildId) {
+    await message.reply(t.commands.only_guild);
+    return;
+  }
+
+  try {
+    if (sub === "on" || sub === "enable") {
+      await AiChatConfigService.setEnabled(guildId, true);
+      await message.reply(t.ai.enabled_on);
+      return;
+    }
+    if (sub === "off" || sub === "disable") {
+      await AiChatConfigService.setEnabled(guildId, false);
+      await message.reply(t.ai.enabled_off);
+      return;
+    }
+    if (sub === "status") {
+      await replyStatus(message, guildId, t);
+      return;
+    }
+    if (sub === "channel") {
+      await handleChannel(message, guildId, args.slice(1), t, prefix);
+      return;
+    }
+
+    await message.reply(usage);
+  } catch (error) {
+    logger.error("ai command error", error);
+    await message.reply(t.commands.error);
+  }
+}
+
+async function replyStatus(
+  message: Message,
+  guildId: string,
+  t: ReturnType<typeof getTranslation>,
+): Promise<void> {
+  const config = await AiChatConfigService.getConfig(guildId);
+  const state = config.enabled ? t.ai.status_on : t.ai.status_off;
+  const channel = config.channelId
+    ? `<#${config.channelId}>`
+    : t.ai.status_no_channel;
+  await message.reply(
+    t.ai.status.replace("{state}", state).replace("{channel}", channel),
+  );
+}
+
+async function handleChannel(
+  message: Message,
+  guildId: string,
+  args: string[],
+  t: ReturnType<typeof getTranslation>,
+  prefix: string,
+): Promise<void> {
+  if (args.length < 1) {
+    await message.reply(t.ai.channel_usage.replace("{prefix}", prefix));
+    return;
+  }
+
+  const raw = args[0].toLowerCase();
+  if (raw === "off" || raw === "none" || raw === "clear") {
+    await AiChatConfigService.clearChannel(guildId);
+    await message.reply(t.ai.channel_cleared);
+    return;
+  }
+
+  const mentionMatch = args[0].match(/^<#(\d+)>$/);
+  let channelId: string | undefined;
+  if (mentionMatch) {
+    channelId = mentionMatch[1];
+  } else if (/^\d{17,19}$/.test(args[0])) {
+    channelId = args[0];
+  } else {
+    await message.reply(t.commands.invalid_channel_id);
+    return;
+  }
+
+  const channel = await message.guild?.channels.fetch(channelId).catch(() => null);
+  if (!channel) {
+    await message.reply(t.ai.channel_not_found);
+    return;
+  }
+  if (channel.type !== ChannelType.GuildText) {
+    await message.reply(t.ai.channel_must_be_text);
+    return;
+  }
+
+  const member = message.member;
+  if (
+    !member ||
+    !channel.permissionsFor(member)?.has(PermissionFlagsBits.ViewChannel)
+  ) {
+    await message.reply(t.ai.channel_no_access);
+    return;
+  }
+
+  const me = message.guild?.members.me;
+  if (
+    !me ||
+    !channel.permissionsFor(me)?.has([
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.ReadMessageHistory,
+    ])
+  ) {
+    await message.reply(t.ai.channel_bot_no_access);
+    return;
+  }
+
+  await AiChatConfigService.setChannel(guildId, channelId);
+  await message.reply(t.ai.channel_set.replace("{channelId}", channelId));
 }
 
 async function runTest(

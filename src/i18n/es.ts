@@ -382,10 +382,25 @@ export const es = {
   },
   ai: {
     no_permission: "No tienes permiso para usar esto.",
-    usage: "Uso: `{prefix}ai <test>`",
+    usage:
+      "Uso: `{prefix}ai <on|off|channel|status|test>`",
     testing: "🔄 Probando conexión con la IA...",
     ok: "✅ IA responde en {elapsed}ms (modelo {model}):\n```\n{response}\n```",
     fail: "❌ No se pudo conectar con la IA. Revisa la configuración.",
     error: "❌ Error probando la IA.",
+    enabled_on: "✅ Chat IA activado.",
+    enabled_off: "✅ Chat IA desactivado.",
+    status: "📊 Chat IA: **{state}**\nCanal: {channel}",
+    status_on: "activado",
+    status_off: "desactivado",
+    status_no_channel: "sin canal",
+    channel_usage: "Uso: `{prefix}ai channel <#canal|off>`",
+    channel_set: "✅ Canal de chat IA: <#{channelId}>",
+    channel_cleared: "✅ Canal de chat IA eliminado.",
+    channel_not_found: "❌ Canal no encontrado.",
+    channel_must_be_text: "❌ El canal debe ser de texto.",
+    channel_no_access: "❌ No puedes ver ese canal.",
+    channel_bot_no_access:
+      "❌ El bot no puede ver, leer el historial o escribir en ese canal.",
   },
 };

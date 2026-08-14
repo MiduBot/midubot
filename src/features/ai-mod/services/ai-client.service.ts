@@ -5,6 +5,8 @@ import { logger } from "@/core/logger";
 
 const AI_TIMEOUT_MS = 180_000;
 
+export type ChatTurn = { role: "user" | "assistant"; content: string };
+
 const clineFetch: typeof fetch = async (input, init) => {
   const response = await fetch(input, init);
 
@@ -42,6 +44,28 @@ export class AIClientService {
     systemPrompt: string,
     userPrompt: string,
   ): Promise<string | null> {
+    return this.generate(systemPrompt, [{ role: "user", content: userPrompt }], {
+      temperature: 0,
+      timeoutMs: AI_TIMEOUT_MS,
+    });
+  }
+
+  static async chatMessages(
+    systemPrompt: string,
+    messages: ChatTurn[],
+    options?: { temperature?: number; timeoutMs?: number },
+  ): Promise<string | null> {
+    return this.generate(systemPrompt, messages, {
+      temperature: options?.temperature ?? 0.9,
+      timeoutMs: options?.timeoutMs ?? 25_000,
+    });
+  }
+
+  private static async generate(
+    systemPrompt: string,
+    messages: ChatTurn[],
+    options: { temperature: number; timeoutMs: number },
+  ): Promise<string | null> {
     if (!env.AI_API_URL || !env.AI_API_KEY) return null;
 
     try {
@@ -55,10 +79,10 @@ export class AIClientService {
       const { text } = await generateText({
         model: provider(env.AI_MODEL),
         system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }],
-        temperature: 0,
+        messages,
+        temperature: options.temperature,
         maxRetries: 0,
-        abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
+        abortSignal: AbortSignal.timeout(options.timeoutMs),
       });
 
       return text;

@@ -53,4 +53,31 @@ describe("AIClientService.chat", () => {
     const raw = await AIClientService.chat("sys", "usr");
     expect(raw).toBe("");
   });
+
+  it("chatMessages passes temperature and history", async () => {
+    generateTextImpl = async () => ({ text: "hey" });
+    const raw = await AIClientService.chatMessages(
+      "sys",
+      [
+        { role: "user", content: "a" },
+        { role: "assistant", content: "b" },
+        { role: "user", content: "c" },
+      ],
+      { temperature: 0.9, timeoutMs: 25_000 },
+    );
+    expect(raw).toBe("hey");
+    const arg = generateTextMock.mock.calls.at(-1)?.[0] as {
+      temperature: number;
+      messages: unknown[];
+    };
+    expect(arg.temperature).toBe(0.9);
+    expect(arg.messages).toHaveLength(3);
+  });
+
+  it("chat keeps temperature 0", async () => {
+    generateTextImpl = async () => ({ text: "x" });
+    await AIClientService.chat("sys", "usr");
+    const arg = generateTextMock.mock.calls.at(-1)?.[0] as { temperature: number };
+    expect(arg.temperature).toBe(0);
+  });
 });
