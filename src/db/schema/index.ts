@@ -8,3 +8,4 @@ export * from "./mod-actions";
 export * from "./mod-notes";
 export * from "./ai-mod";
 export * from "./job-guard";
+export * from "./ai-chat";
