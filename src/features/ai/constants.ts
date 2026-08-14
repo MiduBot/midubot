@@ -7,6 +7,9 @@
 export const CHATBOT_JOKE_GIFS: Readonly<Record<string, string>> = {
   // whoIsHe: "https://tenor.com/view/...",
   // nadieLoConoce: "https://tenor.com/view/...",
+  nadieLoHaVisto: `https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExZnI0d25jMTJlb3hueHV5YTJibTFvZHBtZ25vYnNhOG45cmxsbDR3ZiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/udPKccJ2YTpigbuAlg/giphy.gif`,
+  whoisHe: `https://klipy.com/gifs/komik-15`,
+  whoinvitedbro: `https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExamp6OWpnM3cwZ3VvZHBncnhuZ3psZHdsMXU2NzAyMDk1aDBiNWdtYSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/m1ct3geS6Oujrg1Vbx/giphy.gif`
 };
 
 export const CHATBOT_CONTEXT_MESSAGES = 25;
