@@ -45,3 +45,4 @@ ai-test.ts
 # git worktrees
 .worktrees/
 .superpowers/
+.codebase-memory/
