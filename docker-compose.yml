@@ -1,4 +1,5 @@
 # Discord bots must not run two instances at once.
+# The ready instance claims a Turso lock; the previous one exits within ~1s.
 # In Coolify: disable Rolling Updates / Zero Downtime Deployment so the old
 # container is stopped before the new one starts (brief downtime, no double replies).
 services:

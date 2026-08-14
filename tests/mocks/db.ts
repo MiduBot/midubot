@@ -84,6 +84,8 @@ export function createMockDb() {
 
   const db = {
     query,
+    run: (..._args: unknown[]) =>
+      mutationOps.get("run")?.() ?? Promise.resolve(undefined),
     insert: (..._args: unknown[]) =>
       createChain(() => mutationOps.get("insert")?.()),
     update: (..._args: unknown[]) =>
