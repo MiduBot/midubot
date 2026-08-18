@@ -67,8 +67,14 @@ export async function enforceLinkNewcomer(message: Message): Promise<void> {
 
   try {
     if (!message.channel.isSendable()) return;
+    const remainingMs = Math.max(
+      0,
+      config.thresholdMs - (Date.now() - joinedAt),
+    );
     const warning = await message.channel.send(
-      t.linknewcomer.warn.replace("{user}", message.author.id),
+      t.linknewcomer.warn
+        .replace("{user}", message.author.id)
+        .replace("{remaining}", formatDuration(remainingMs)),
     );
     setTimeout(() => warning.delete().catch(() => {}), 5000);
   } catch (e) {

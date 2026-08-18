@@ -250,7 +250,7 @@ export const en = {
     status_enabled: "Enabled",
     status_threshold: "Minimum server tenure",
     delete_reason: "Link deleted: member too new.",
-    warn: "<@{user}>, you recently joined; you can't post links here yet.",
+    warn: "<@{user}>, you have {remaining} left before you can send links.",
     log_title: "🔗 New-member link blocked",
     log_notice: "🔗 New-member link filter triggered",
   },

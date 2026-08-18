@@ -251,7 +251,7 @@ export const es = {
     status_enabled: "Estado",
     status_threshold: "Antigüedad mínima en el servidor",
     delete_reason: "Enlace eliminado: miembro demasiado nuevo.",
-    warn: "<@{user}>, acabas de unirte; aún no puedes enviar enlaces aquí.",
+    warn: "<@{user}>, te quedan {remaining} para poder enviar enlaces.",
     log_title: "🔗 Enlace de miembro nuevo bloqueado",
     log_notice: "🔗 Filtro de enlaces para miembros nuevos activado",
   },
