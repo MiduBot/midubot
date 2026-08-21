@@ -383,14 +383,14 @@ export const es = {
   ai: {
     no_permission: "No tienes permiso para usar esto.",
     usage:
-      "Uso: `{prefix}ai <on|off|channel|status|test>`",
+      "Uso: `{prefix}ai <on|off|channel|mode|status|test>`",
     testing: "🔄 Probando conexión con la IA...",
     ok: "✅ IA responde en {elapsed}ms (modelo {model}):\n```\n{response}\n```",
     fail: "❌ No se pudo conectar con la IA. Revisa la configuración.",
     error: "❌ Error probando la IA.",
     enabled_on: "✅ Chat IA activado.",
     enabled_off: "✅ Chat IA desactivado.",
-    status: "📊 Chat IA: **{state}**\nCanal: {channel}",
+    status: "📊 Chat IA: **{state}**\nCanal: {channel}\nModo: {mode}",
     status_on: "activado",
     status_off: "desactivado",
     status_no_channel: "sin canal",
@@ -402,5 +402,13 @@ export const es = {
     channel_no_access: "❌ No puedes ver ese canal.",
     channel_bot_no_access:
       "❌ El bot no puede ver, leer el historial o escribir en ese canal.",
+    mode_usage: "Uso: `{prefix}ai mode <ambient|mentions>`",
+    mode_set: "✅ Modo del chat IA: **{mode}**.",
+    mode_ambient: "ambiental",
+    mode_mentions: "solo menciones y respuestas",
+    feedback_thanks: "Gracias, usaré esta valoración para mejorar.",
+    feedback_forbidden: "Solo quien hizo la pregunta puede valorar esta respuesta.",
+    feedback_already: "Esta respuesta ya fue valorada.",
+    feedback_missing: "No encontré los datos de esta respuesta.",
   },
 };

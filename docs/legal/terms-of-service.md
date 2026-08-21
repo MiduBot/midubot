@@ -28,6 +28,7 @@ Midubot is a Discord bot (Bun/TypeScript, discord.js) that provides, among other
 | Channels | Log channel, Bot language (`es` / `en`), “one-message” channel (one visible message per user) |
 | Automatic moderation | Long/suspicious message filter, per-channel link cooldown, link blocking for recent joiners |
 | AI moderation | Message classification (spam/scams/self-promo and job posts) via an OpenAI-compatible AI provider |
+| AI chat | Optional contextual chatbot, answer feedback, and image understanding when explicitly enabled with a compatible model |
 | Apps / context menus | Community report quorum, moderation notes, history, Puff (duplicate sweep), etc. |
 | System | Help, version, and restricted internal tools |
 
@@ -80,12 +81,12 @@ Depending on configuration, Midubot may:
 
 ### 7.2 AI limitations
 
-AI features (for example, moderation triggered by mentioning a configured mod role, and the job-offer filter on a configured channel):
+AI features (for example, the contextual chatbot, moderation triggered by mentioning a configured mod role, and the job-offer filter on a configured channel):
 
 - Send **message text** (and server example/prompt context) to an **external OpenAI-compatible AI provider** configured by the Operator.
 - Are probabilistic systems: they can produce **false positives and false negatives**.
 - **Do not replace** human staff judgment.
-- May not “see” images; duplicate-image detection relies on fingerprints/hashes and the Bot’s own logic.
+- Only process image content when chatbot vision is explicitly enabled with a compatible model; duplicate-image detection otherwise relies on fingerprints/hashes and the Bot’s own logic.
 
 By enabling or keeping these features active, the server administrator accepts that error margin and the responsibility to review alerts and feedback.
 

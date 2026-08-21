@@ -14,6 +14,11 @@ const envSchema = z.object({
   AI_API_URL: z.string().url().optional(),
   AI_API_KEY: z.string().optional(),
   AI_MODEL: z.string().default("deepseek-v4-flash"),
+  AI_CHAT_MODEL: z.string().min(1).optional(),
+  AI_CHAT_VISION_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
   JOB_CHANNEL_ID: z.string().optional(),
   SUPERDEV: z.string().optional(),
 });

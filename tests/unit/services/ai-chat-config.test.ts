@@ -19,6 +19,7 @@ describe("AiChatConfigService", () => {
       expect(await AiChatConfigService.getConfig("g1")).toEqual({
         enabled: false,
         channelId: null,
+        mode: "ambient",
       });
     });
 
@@ -27,11 +28,13 @@ describe("AiChatConfigService", () => {
       expect(await AiChatConfigService.getConfig("g1")).toEqual({
         enabled: true,
         channelId: "c1",
+        mode: "ambient",
       });
       setQueryResult("findFirst", { enabled: false, channelId: "other" });
       expect(await AiChatConfigService.getConfig("g1")).toEqual({
         enabled: true,
         channelId: "c1",
+        mode: "ambient",
       });
     });
   });
@@ -45,6 +48,7 @@ describe("AiChatConfigService", () => {
       expect(await AiChatConfigService.getConfig("g1")).toEqual({
         enabled: true,
         channelId: null,
+        mode: "ambient",
       });
     });
 
@@ -57,6 +61,7 @@ describe("AiChatConfigService", () => {
       expect(await AiChatConfigService.getConfig("g1")).toEqual({
         enabled: true,
         channelId: "c1",
+        mode: "ambient",
       });
     });
   });
@@ -70,6 +75,7 @@ describe("AiChatConfigService", () => {
       expect(await AiChatConfigService.getConfig("g1")).toEqual({
         enabled: false,
         channelId: "c9",
+        mode: "ambient",
       });
     });
   });
@@ -89,6 +95,26 @@ describe("AiChatConfigService", () => {
       expect(await AiChatConfigService.getConfig("g1")).toEqual({
         enabled: true,
         channelId: null,
+        mode: "ambient",
+      });
+    });
+  });
+
+  describe("setMode", () => {
+    it("stores mention-only mode and busts cache", async () => {
+      setQueryResult("findFirst", { enabled: true, channelId: "c1" });
+      await AiChatConfigService.getConfig("g1");
+      setMutationResult("update", undefined);
+      await AiChatConfigService.setMode("g1", "mentions");
+      setQueryResult("findFirst", {
+        enabled: true,
+        channelId: "c1",
+        mode: "mentions",
+      });
+      expect(await AiChatConfigService.getConfig("g1")).toEqual({
+        enabled: true,
+        channelId: "c1",
+        mode: "mentions",
       });
     });
   });

@@ -12,6 +12,13 @@ export interface HistoryMessage {
   isBot: boolean;
   hasImage: boolean;
   hasAttachment: boolean;
+  images?: HistoryImage[];
+  priority?: boolean;
+}
+
+export interface HistoryImage {
+  url: string;
+  mediaType: string;
 }
 
 function stripWrappers(text: string): string {
@@ -48,40 +55,89 @@ function wrap(msg: HistoryMessage, body: string): string {
   return `<message author="${escapeAttr(msg.authorName)}" id="${escapeAttr(msg.id)}">${body}</message>`;
 }
 
-function toTurn(msg: HistoryMessage, botId: string): ChatTurn | null {
+function toTurn(
+  msg: HistoryMessage,
+  botId: string,
+  includeImages: boolean,
+): ChatTurn | null {
   const body = bodyOf(msg);
   if (!body) return null;
   const isAssistant = msg.isBot && msg.authorId === botId;
+  if (!isAssistant && includeImages && msg.images?.length) {
+    const images = msg.images.slice(0, 2).flatMap((image) => {
+      try {
+        return [
+          {
+            type: "image" as const,
+            image: new URL(image.url),
+            mediaType: image.mediaType,
+          },
+        ];
+      } catch {
+        return [];
+      }
+    });
+    if (images.length > 0) {
+      return {
+        role: "user",
+        content: [{ type: "text", text: wrap(msg, body) }, ...images],
+      };
+    }
+  }
   return {
     role: isAssistant ? "assistant" : "user",
     content: isAssistant ? body : wrap(msg, body),
   };
 }
 
+function turnLength(turn: ChatTurn): number {
+  if (typeof turn.content === "string") return turn.content.length;
+  return turn.content.reduce(
+    (total, part) => total + (part.type === "text" ? part.text.length : 0),
+    0,
+  );
+}
+
 export function buildChatMessages(
   history: HistoryMessage[],
   botId: string,
+  includeImages = false,
 ): ChatTurn[] {
-  const selected: ChatTurn[] = [];
+  const imageMessageId = includeImages
+    ? [...history].reverse().find((msg) => msg.priority && msg.images?.length)?.id
+    : undefined;
+  const candidates = history.flatMap((message, index) => {
+    const turn = toTurn(message, botId, message.id === imageMessageId);
+    return turn ? [{ index, priority: !!message.priority, turn }] : [];
+  });
+  const newestFirst = [
+    ...candidates.filter((candidate) => candidate.priority).reverse(),
+    ...candidates.filter((candidate) => !candidate.priority).reverse(),
+  ];
+  const selected: typeof candidates = [];
   let used = 0;
 
-  for (let i = history.length - 1; i >= 0; i--) {
-    const turn = toTurn(history[i], botId);
-    if (!turn) continue;
-    if (used + turn.content.length > CHATBOT_HISTORY_MAX_CHARS) continue;
-    used += turn.content.length;
-    selected.push(turn);
+  for (const candidate of newestFirst) {
+    const length = turnLength(candidate.turn);
+    if (used + length > CHATBOT_HISTORY_MAX_CHARS) continue;
+    used += length;
+    selected.push(candidate);
   }
 
-  selected.reverse();
+  selected.sort((a, b) => a.index - b.index);
 
   const merged: ChatTurn[] = [];
-  for (const turn of selected) {
+  for (const { turn } of selected) {
     const last = merged[merged.length - 1];
-    if (last && last.role === turn.role) {
+    if (
+      last &&
+      last.role === turn.role &&
+      typeof last.content === "string" &&
+      typeof turn.content === "string"
+    ) {
       last.content = `${last.content}\n${turn.content}`;
     } else {
-      merged.push({ ...turn });
+      merged.push(turn);
     }
   }
 

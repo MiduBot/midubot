@@ -3,18 +3,30 @@ import { createMockMessage } from "../../mocks/discord";
 import { ChannelType } from "discord.js";
 
 const configMock = {
-  getConfig: mock(async () => ({ enabled: false, channelId: null as string | null })),
+  getConfig: mock(async () => ({
+    enabled: false,
+    channelId: null as string | null,
+    mode: "ambient" as const,
+  })),
   setEnabled: mock(async () => {}),
   setChannel: mock(async () => {}),
   clearChannel: mock(async () => {}),
+  setMode: mock(async () => {}),
 };
-const chatMock = mock(async () => "pong");
+const chatMock = mock(async () => ({
+  text: "pong",
+  model: "chat-model",
+  latencyMs: 1,
+  inputTokens: 1,
+  outputTokens: 1,
+  finishReason: "stop",
+}));
 
 mock.module("@/features/ai/services/ai-chat-config.service", () => ({
   AiChatConfigService: configMock,
 }));
 mock.module("@/features/ai-mod", () => ({
-  AIClientService: { chat: chatMock },
+  AIClientService: { chatMessagesDetailed: chatMock },
 }));
 
 import { handleAiCommand } from "@/features/ai/commands/ai.command";
@@ -27,12 +39,21 @@ describe("handleAiCommand", () => {
     configMock.setEnabled.mockClear();
     configMock.setChannel.mockClear();
     configMock.clearChannel.mockClear();
+    configMock.setMode.mockClear();
     chatMock.mockClear();
     configMock.getConfig.mockImplementation(async () => ({
       enabled: false,
       channelId: null,
+      mode: "ambient",
     }));
-    chatMock.mockImplementation(async () => "pong");
+    chatMock.mockImplementation(async () => ({
+      text: "pong",
+      model: "chat-model",
+      latencyMs: 1,
+      inputTokens: 1,
+      outputTokens: 1,
+      finishReason: "stop",
+    }));
   });
 
   it("shows usage with no args", async () => {
@@ -60,6 +81,7 @@ describe("handleAiCommand", () => {
     configMock.getConfig.mockImplementation(async () => ({
       enabled: true,
       channelId: "c1",
+      mode: "ambient",
     }));
     const msg = createMockMessage();
     await handleAiCommand(msg, ["status"], "m!");
@@ -71,6 +93,12 @@ describe("handleAiCommand", () => {
     const msg = createMockMessage();
     await handleAiCommand(msg, ["channel", "off"], "m!");
     expect(configMock.clearChannel).toHaveBeenCalledWith("g1");
+  });
+
+  it("sets mention-only mode", async () => {
+    const msg = createMockMessage();
+    await handleAiCommand(msg, ["mode", "mentions"], "m!");
+    expect(configMock.setMode).toHaveBeenCalledWith("g1", "mentions");
   });
 
   it("sets a text channel from a mention", async () => {

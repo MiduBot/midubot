@@ -604,18 +604,20 @@ const es: CategoryHelp[] = [
         id: "ai",
         name: "ai",
         emoji: "💬",
-        usage: "{prefix}ai <on|off|channel|status|test>",
+        usage: "{prefix}ai <on|off|channel|mode|status|test>",
         summary: "Chatbot de IA en un canal (apagado por defecto).",
         detail:
           "El bot puede hablar como un usuario más: rompe el silencio (~15 min) en el canal configurado, sigue el hilo un rato y responde si lo mencionan en cualquier canal.\n\n" +
           "• `{prefix}ai on` / `{prefix}ai off` — activar o desactivar (por defecto off).\n" +
           "• `{prefix}ai channel <#canal>` — canal donde rompe el silencio.\n" +
-          "• `{prefix}ai channel off` — quitar el canal (no desactiva el chat).\n" +
-          "• `{prefix}ai status` — ver si está activo y qué canal hay.\n" +
+           "• `{prefix}ai channel off` — quitar el canal (no desactiva el chat).\n" +
+           "• `{prefix}ai mode <ambient|mentions>` — hablar en el canal o solo responder menciones/replies.\n" +
+           "• `{prefix}ai status` — ver si está activo y qué canal hay.\n" +
           "• `{prefix}ai test` — probar la conexión con el modelo (solo superdev).",
         examples: [
           "{prefix}ai on",
           "{prefix}ai channel #general",
+          "{prefix}ai mode mentions",
           "{prefix}ai status",
           "{prefix}ai off",
         ],
@@ -1182,18 +1184,20 @@ const en: CategoryHelp[] = [
         id: "ai",
         name: "ai",
         emoji: "💬",
-        usage: "{prefix}ai <on|off|channel|status|test>",
+        usage: "{prefix}ai <on|off|channel|mode|status|test>",
         summary: "AI chatbot in a channel (off by default).",
         detail:
           "The bot can talk like another user: it breaks the silence (~15 min) in the configured channel, keeps the thread going for a bit, and replies when mentioned in any channel.\n\n" +
           "• `{prefix}ai on` / `{prefix}ai off` — enable or disable (off by default).\n" +
           "• `{prefix}ai channel <#channel>` — channel where it breaks the silence.\n" +
-          "• `{prefix}ai channel off` — clear the channel (does not disable chat).\n" +
-          "• `{prefix}ai status` — show whether it is on and which channel is set.\n" +
+           "• `{prefix}ai channel off` — clear the channel (does not disable chat).\n" +
+           "• `{prefix}ai mode <ambient|mentions>` — join channel chat or only answer mentions/replies.\n" +
+           "• `{prefix}ai status` — show whether it is on and which channel is set.\n" +
           "• `{prefix}ai test` — ping the model (superdev only).",
         examples: [
           "{prefix}ai on",
           "{prefix}ai channel #general",
+          "{prefix}ai mode mentions",
           "{prefix}ai status",
           "{prefix}ai off",
         ],

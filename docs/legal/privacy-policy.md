@@ -57,6 +57,7 @@ When moderation or related features run, we may process:
 | AI / job-guard cases | Author ID, channel/message IDs, content excerpt, verdict, confidence, reason, actions taken, staff resolution/feedback |
 | Malicious-message examples | Message text labeled malicious/clean for AI context learning |
 | AI prompt notes | Staff-derived prompt snippets used to reduce false positives |
+| AI chat metrics | Request/response message IDs, requester ID, model, latency, token counts, finish reason, and optional thumbs-up/down rating; the chat text is not duplicated in this metrics table |
 
 Message content sent to AI is typically truncated (on the order of a few thousand characters per message in current code).
 
@@ -81,6 +82,7 @@ Per guild, the Bot may store settings such as:
 - Link-cooldown channel rules and recent link entries
 - Whitelist entries (role / member / permission)
 - AI-mod roles, ignored channels/categories, notify targets, self-promo bypass channels
+- AI chatbot channel and response mode (ambient or mentions/replies only)
 
 ### 3.5 Temporary in-memory data
 
@@ -88,6 +90,7 @@ Some data lives only in process memory for a short time, for example:
 
 - Community report quorum state (reporter IDs + referenced message), with a TTL on the order of tens of minutes
 - Caches (configuration, image fingerprints, sanction cache, etc.) that expire or are invalidated
+- AI chatbot cooldown, queue, and recent-conversation state used to prevent abuse
 
 Restarting the process clears pure in-memory state; database records remain.
 
@@ -149,9 +152,9 @@ Persistent Bot state is stored in a **Turso (libSQL)** database configured by th
 
 ### 6.3 AI provider
 
-When AI features are enabled and credentials are set, message text and contextual examples/prompts are sent to an **OpenAI-compatible endpoint** configured by the Operator (`AI_API_URL`, `AI_API_KEY`, `AI_MODEL`; default model name in configuration may be a DeepSeek-compatible model).
+When AI features are enabled and credentials are set, message text and contextual examples/prompts are sent to an **OpenAI-compatible endpoint** configured by the Operator (`AI_API_URL`, `AI_API_KEY`, `AI_MODEL`, and optional `AI_CHAT_MODEL`; default model names may be DeepSeek-compatible). When chatbot vision is explicitly enabled, up to two image attachments from the relevant message may also be made available to that provider through their Discord CDN URLs.
 
-That provider processes the submitted text to return a classification verdict. Their retention and training practices are governed by **their** terms and privacy policy, and by the Operator’s contract with them. Do not enable AI features if you cannot accept that outbound processing.
+That provider processes the submitted data to return a classification verdict or chatbot response. Their retention and training practices are governed by **their** terms and privacy policy, and by the Operator’s contract with them. Do not enable AI features if you cannot accept that outbound processing.
 
 ### 6.4 Hosting / monitoring
 

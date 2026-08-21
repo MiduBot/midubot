@@ -19,6 +19,14 @@ describe("sanitizeChatbotOutput", () => {
     expect(sanitizeChatbotOutput("mira <@&123456789012345678>")).toBe("mira");
   });
 
+  it("strips Discord invite links", () => {
+    const out = sanitizeChatbotOutput(
+      "entra en https://discord.gg/ejemplo y discord.com/invite/otro",
+    );
+    expect(out).not.toContain("discord.gg");
+    expect(out).not.toContain("discord.com/invite");
+  });
+
   it("truncates long output", () => {
     const out = sanitizeChatbotOutput("a".repeat(CHATBOT_OUTPUT_MAX_CHARS + 50));
     expect(out.length).toBe(CHATBOT_OUTPUT_MAX_CHARS);

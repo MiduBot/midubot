@@ -8,6 +8,7 @@ import {
 } from "@/features/images";
 import { handleFeedbackButton } from "@/features/ai-mod";
 import { handleJobGuardFeedbackButton } from "@/features/job-guard";
+import { handleChatFeedbackButton } from "@/features/ai";
 import { WhitelistService } from "@/features/whitelist";
 import { LanguageService } from "@/features/language";
 import { getTranslation } from "@/i18n";
@@ -49,6 +50,10 @@ export async function handleInteractionCreate(
     }
 
     if (interaction.isButton()) {
+      if (interaction.customId.startsWith("chatfb_")) {
+        await handleChatFeedbackButton(interaction);
+        return;
+      }
       if (interaction.customId.startsWith("aimod_")) {
         await handleFeedbackButton(interaction);
         return;

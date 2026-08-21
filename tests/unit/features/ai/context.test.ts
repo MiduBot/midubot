@@ -86,6 +86,43 @@ describe("buildChatMessages", () => {
     expect(turns[turns.length - 1].content).toContain("19");
   });
 
+  it("keeps priority reply-chain messages when over the budget", () => {
+    const history = Array.from({ length: 50 }, (_, i) =>
+      msg({
+        id: String(i),
+        authorId: "u1",
+        content: `mensaje-${i}-${"x".repeat(390)}`,
+        priority: i === 0,
+      }),
+    );
+    const turns = buildChatMessages(history, BOT);
+    const text = turns.map((turn) => turn.content).join("\n");
+    expect(text).toContain("mensaje-0-");
+    expect(text).toContain("mensaje-49-");
+  });
+
+  it("sends images from the newest priority message when vision is enabled", () => {
+    const turns = buildChatMessages(
+      [
+        msg({
+          id: "1",
+          authorId: "u1",
+          content: "qué aparece aquí",
+          hasImage: true,
+          priority: true,
+          images: [{ url: "https://cdn.test/image.png", mediaType: "image/png" }],
+        }),
+      ],
+      BOT,
+      true,
+    );
+    const content = turns[0].content;
+    expect(Array.isArray(content)).toBe(true);
+    expect(
+      Array.isArray(content) && content.some((part) => part.type === "image"),
+    ).toBe(true);
+  });
+
   it("adds [imagen] when there is no text", () => {
     const turns = buildChatMessages(
       [msg({ id: "1", authorId: "u1", authorName: "Ada", hasImage: true })],

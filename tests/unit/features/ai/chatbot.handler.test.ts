@@ -5,13 +5,29 @@ const mockEnv = {
   AI_API_URL: "https://ai.test/v1",
   AI_API_KEY: "test-key",
   AI_MODEL: "deepseek-v4-flash",
+  AI_CHAT_VISION_ENABLED: false,
 };
 mock.module("@/config/env", () => ({ env: mockEnv }));
 
 const configMock = {
-  getConfig: mock(async () => ({ enabled: false, channelId: null as string | null })),
+  getConfig: mock(async () => ({
+    enabled: false,
+    channelId: null as string | null,
+    mode: "ambient" as const,
+  })),
 };
-const chatMessagesMock = mock(async () => "jaja");
+function aiResult(text: string) {
+  return {
+    text,
+    model: "chat-model",
+    latencyMs: 10,
+    inputTokens: 20,
+    outputTokens: 5,
+    finishReason: "stop",
+  };
+}
+const chatMessagesMock = mock(async () => aiResult("jaja"));
+const feedbackRecordMock = mock(async () => {});
 const hasRoleMock = mock(async () => false);
 const isIgnoredMock = mock(async () => false);
 
@@ -19,7 +35,10 @@ mock.module("@/features/ai/services/ai-chat-config.service", () => ({
   AiChatConfigService: configMock,
 }));
 mock.module("@/features/ai-mod", () => ({
-  AIClientService: { chatMessages: chatMessagesMock },
+  AIClientService: { chatMessagesDetailed: chatMessagesMock },
+}));
+mock.module("@/features/ai/services/chat-feedback.service", () => ({
+  ChatFeedbackService: { record: feedbackRecordMock },
 }));
 mock.module("@/features/ai-mod/services/mod-role.service", () => ({
   ModRoleService: { hasRole: hasRoleMock },
@@ -43,12 +62,14 @@ function makeMsg(opts: {
   replyToBot?: boolean;
   roleIds?: string[];
   authorId?: string;
+  attachments?: Array<{ url: string; contentType?: string }>;
 } = {}) {
   const msg = createMockMessage({
     id: opts.id,
     content: opts.content ?? "hola",
     author: { id: opts.authorId ?? "111111111111111111" },
     channelId: CHANNEL,
+    attachments: opts.attachments,
   });
   const mentionsUsers = {
     has: (id: string) => !!opts.mentioned && id === BOT_ID,
@@ -91,12 +112,15 @@ describe("handleChatbot", () => {
     configMock.getConfig.mockImplementation(async () => ({
       enabled: false,
       channelId: null,
+      mode: "ambient",
     }));
-    chatMessagesMock.mockImplementation(async () => "jaja");
+    chatMessagesMock.mockImplementation(async () => aiResult("jaja"));
+    feedbackRecordMock.mockClear();
     hasRoleMock.mockImplementation(async () => false);
     isIgnoredMock.mockImplementation(async () => false);
     mockEnv.AI_API_URL = "https://ai.test/v1";
     mockEnv.AI_API_KEY = "test-key";
+    mockEnv.AI_CHAT_VISION_ENABLED = false;
   });
 
   it("does nothing when disabled", async () => {
@@ -130,6 +154,77 @@ describe("handleChatbot", () => {
       .mock.calls[0][0] as { content: string; allowedMentions: { parse: string[] } };
     expect(payload.content).toBe("jaja");
     expect(payload.allowedMentions.parse).toEqual([]);
+    expect(feedbackRecordMock).toHaveBeenCalled();
+    const fetch = msg.channel.messages.fetch as unknown as {
+      mock: { calls: unknown[][] };
+    };
+    expect(fetch.mock.calls.at(-1)?.[0]).toEqual({
+      limit: 24,
+      before: msg.id,
+    });
+  });
+
+  it("sends image attachments without MIME when vision is enabled", async () => {
+    mockEnv.AI_CHAT_VISION_ENABLED = true;
+    configMock.getConfig.mockImplementation(async () => ({
+      enabled: true,
+      channelId: null,
+      mode: "ambient",
+    }));
+    const msg = makeMsg({
+      mentioned: true,
+      attachments: [{ url: "https://cdn.test/screenshot.PNG", contentType: "" }],
+    });
+    await handleChatbot(msg);
+    const messages = chatMessagesMock.mock.calls[0][1] as Array<{
+      content: unknown;
+    }>;
+    expect(
+      messages.some(
+        (turn) =>
+          Array.isArray(turn.content) &&
+          turn.content.some((part) => part.type === "image"),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps the configured channel quiet in mentions mode", async () => {
+    configMock.getConfig.mockImplementation(async () => ({
+      enabled: true,
+      channelId: CHANNEL,
+      mode: "mentions",
+    }));
+    const msg = makeMsg({ content: "buenas" });
+    await handleChatbot(msg);
+    expect(chatMessagesMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a short failure for direct requests", async () => {
+    configMock.getConfig.mockImplementation(async () => ({
+      enabled: true,
+      channelId: null,
+      mode: "ambient",
+    }));
+    chatMessagesMock.mockImplementation(async () => null);
+    const msg = makeMsg({ mentioned: true });
+    await handleChatbot(msg);
+    const payload = (msg.reply as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls[0][0] as { content: string };
+    expect(payload.content).toContain("No pude responder");
+  });
+
+  it("rate-limits repeated direct requests from the same user", async () => {
+    configMock.getConfig.mockImplementation(async () => ({
+      enabled: true,
+      channelId: null,
+      mode: "ambient",
+    }));
+    const first = makeMsg({ id: "r1", mentioned: true, authorId: "same" });
+    const second = makeMsg({ id: "r2", mentioned: true, authorId: "same" });
+    await handleChatbot(first);
+    await handleChatbot(second);
+    expect(chatMessagesMock).toHaveBeenCalledTimes(1);
+    expect(second.react).toHaveBeenCalledWith("⏳");
   });
 
   it("does not reply when a mod role is mentioned", async () => {
@@ -174,8 +269,8 @@ describe("handleChatbot", () => {
       channelId: null,
     }));
 
-    let releaseFirst!: (value: string) => void;
-    const firstGate = new Promise<string>((resolve) => {
+    let releaseFirst!: (value: ReturnType<typeof aiResult>) => void;
+    const firstGate = new Promise<ReturnType<typeof aiResult>>((resolve) => {
       releaseFirst = resolve;
     });
     let started!: () => void;
@@ -187,7 +282,7 @@ describe("handleChatbot", () => {
       started();
       return firstGate;
     });
-    chatMessagesMock.mockImplementation(async () => "luego");
+    chatMessagesMock.mockImplementation(async () => aiResult("luego"));
 
     const first = makeMsg({ id: "m1", mentioned: true, authorId: "111" });
     const p1 = handleChatbot(first);
@@ -198,7 +293,7 @@ describe("handleChatbot", () => {
     expect(chatMessagesMock).toHaveBeenCalledTimes(1);
     expect(second.reply).not.toHaveBeenCalled();
 
-    releaseFirst("primero");
+    releaseFirst(aiResult("primero"));
     await p1;
 
     expect(first.reply).toHaveBeenCalled();
@@ -212,8 +307,8 @@ describe("handleChatbot", () => {
       channelId: null,
     }));
 
-    let releaseFirst!: (value: string) => void;
-    const firstGate = new Promise<string>((resolve) => {
+    let releaseFirst!: (value: ReturnType<typeof aiResult>) => void;
+    const firstGate = new Promise<ReturnType<typeof aiResult>>((resolve) => {
       releaseFirst = resolve;
     });
     let started!: () => void;
@@ -225,7 +320,7 @@ describe("handleChatbot", () => {
       started();
       return firstGate;
     });
-    chatMessagesMock.mockImplementation(async () => "luego");
+    chatMessagesMock.mockImplementation(async () => aiResult("luego"));
 
     const first = makeMsg({ id: "p1", mentioned: true, authorId: "111" });
     const p1 = handleChatbot(first);
@@ -239,7 +334,7 @@ describe("handleChatbot", () => {
     }
     expect(chatMessagesMock).toHaveBeenCalledTimes(1);
 
-    releaseFirst("primero");
+    releaseFirst(aiResult("primero"));
     await p1;
 
     expect(first.reply).toHaveBeenCalled();
@@ -247,6 +342,42 @@ describe("handleChatbot", () => {
       expect(extra.reply).toHaveBeenCalled();
     }
     expect(chatMessagesMock).toHaveBeenCalledTimes(1 + extras.length);
+  });
+
+  it("drops queued replies after the chatbot is disabled", async () => {
+    configMock.getConfig.mockImplementation(async () => ({
+      enabled: true,
+      channelId: null,
+      mode: "ambient",
+    }));
+    let releaseFirst!: (value: ReturnType<typeof aiResult>) => void;
+    const gate = new Promise<ReturnType<typeof aiResult>>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    chatMessagesMock.mockImplementationOnce(async () => {
+      started();
+      return gate;
+    });
+
+    const first = makeMsg({ id: "disable-1", mentioned: true, authorId: "u1" });
+    const running = handleChatbot(first);
+    await startedPromise;
+    const queued = makeMsg({ id: "disable-2", mentioned: true, authorId: "u2" });
+    await handleChatbot(queued);
+    configMock.getConfig.mockImplementation(async () => ({
+      enabled: false,
+      channelId: null,
+      mode: "ambient",
+    }));
+
+    releaseFirst(aiResult("primero"));
+    await running;
+    expect(chatMessagesMock).toHaveBeenCalledTimes(1);
+    expect(queued.reply).not.toHaveBeenCalled();
   });
 
   it("replies to a mention in an ignored channel", async () => {

@@ -1,4 +1,10 @@
-import type { Message } from "discord.js";
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  type Attachment,
+  type Message,
+} from "discord.js";
 import { env } from "@/config/env";
 import { logger } from "@/core/logger";
 import { isIgnored } from "@/core/discord/ignored-channels";
@@ -6,24 +12,31 @@ import { AIClientService } from "@/features/ai-mod";
 import { ModRoleService } from "@/features/ai-mod/services/mod-role.service";
 import {
   CHATBOT_CONTEXT_MESSAGES,
+  CHATBOT_GUILD_RATE_MAX,
+  CHATBOT_GUILD_RATE_WINDOW_MS,
+  CHATBOT_MAX_OUTPUT_TOKENS,
   CHATBOT_MENTION_PENDING_MAX,
   CHATBOT_PENDING_MAX,
+  CHATBOT_REPLY_CHAIN_DEPTH,
   CHATBOT_SILENCE_MS,
   CHATBOT_STICKY_MS,
   CHATBOT_SYSTEM_PROMPT,
   CHATBOT_TEMPERATURE,
   CHATBOT_TIMEOUT_MS,
+  CHATBOT_USER_COOLDOWN_MS,
 } from "../constants";
 import { AiChatConfigService } from "../services/ai-chat-config.service";
 import {
   buildChatMessages,
-  mergeReferenced,
+  type HistoryImage,
   type HistoryMessage,
 } from "../services/context";
+import { ChatFeedbackService } from "../services/chat-feedback.service";
 import { sanitizeChatbotOutput } from "../services/sanitize";
 
 export interface ShouldRespondInput {
   enabled: boolean;
+  ambientEnabled: boolean;
   isAiChannel: boolean;
   mentionedBot: boolean;
   replyToBot: boolean;
@@ -41,6 +54,7 @@ export function shouldRespond(input: ShouldRespondInput): boolean {
   if (input.mentionsModRole) return false;
 
   if (input.mentionedBot || input.replyToBot) return true;
+  if (!input.ambientEnabled) return false;
   if (input.ignored && !input.isAiChannel) return false;
   if (!input.isAiChannel) return false;
 
@@ -77,12 +91,37 @@ const lastHumanAt = new Map<string, number>();
 const lastBotReply = new Map<string, BotReplyMemory>();
 const inflight = new Set<string>();
 const pending = new Map<string, PendingTurn[]>();
+const userRequestAt = new Map<string, number>();
+const guildRequestAt = new Map<string, number[]>();
 
 export function resetChatbotMemory(): void {
   lastHumanAt.clear();
   lastBotReply.clear();
   inflight.clear();
   pending.clear();
+  userRequestAt.clear();
+  guildRequestAt.clear();
+}
+
+function consumeRateLimit(guildId: string, userId: string, now: number): boolean {
+  const userKey = `${guildId}:${userId}`;
+  const previous = userRequestAt.get(userKey);
+  if (previous != null && now - previous < CHATBOT_USER_COOLDOWN_MS) {
+    return false;
+  }
+
+  const recent = (guildRequestAt.get(guildId) ?? []).filter(
+    (timestamp) => now - timestamp < CHATBOT_GUILD_RATE_WINDOW_MS,
+  );
+  if (recent.length >= CHATBOT_GUILD_RATE_MAX) {
+    guildRequestAt.set(guildId, recent);
+    return false;
+  }
+
+  userRequestAt.set(userKey, now);
+  recent.push(now);
+  guildRequestAt.set(guildId, recent);
+  return true;
 }
 
 function enqueuePending(turn: PendingTurn): void {
@@ -130,13 +169,41 @@ function displayName(message: Message): string {
   );
 }
 
+function imageMediaType(attachment: Attachment): string | null {
+  if (attachment.contentType?.startsWith("image/")) {
+    return attachment.contentType;
+  }
+  const extension = (attachment.name ?? attachment.url)
+    .split(/[?#]/, 1)[0]
+    .match(/\.([a-z0-9]+)$/i)?.[1]
+    ?.toLowerCase();
+  const mediaTypes: Record<string, string> = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    avif: "image/avif",
+  };
+  return extension ? (mediaTypes[extension] ?? null) : null;
+}
+
 function hasImageAttachment(message: Message): boolean {
-  return [...message.attachments.values()].some((a) =>
-    (a.contentType ?? "").startsWith("image/"),
+  return [...message.attachments.values()].some(
+    (attachment) => imageMediaType(attachment) !== null,
   );
 }
 
-function toHistory(message: Message): HistoryMessage {
+function imageAttachments(message: Message): HistoryImage[] {
+  return [...message.attachments.values()]
+    .flatMap((attachment) => {
+      const mediaType = imageMediaType(attachment);
+      return mediaType ? [{ url: attachment.url, mediaType }] : [];
+    })
+    .slice(0, 2);
+}
+
+function toHistory(message: Message, priority = false): HistoryMessage {
   return {
     id: message.id,
     content: message.content ?? "",
@@ -145,6 +212,8 @@ function toHistory(message: Message): HistoryMessage {
     isBot: message.author.bot,
     hasImage: hasImageAttachment(message),
     hasAttachment: message.attachments.size > 0,
+    images: imageAttachments(message),
+    priority,
   };
 }
 
@@ -205,12 +274,13 @@ async function loadHistory(message: Message): Promise<HistoryMessage[]> {
   if (channel && "messages" in channel && channel.messages?.fetch) {
     try {
       const fetched = await channel.messages.fetch({
-        limit: CHATBOT_CONTEXT_MESSAGES,
+        limit: Math.max(1, CHATBOT_CONTEXT_MESSAGES - 1),
+        before: message.id,
       });
       const items = [...fetched.values()].sort(
         (a, b) => a.createdTimestamp - b.createdTimestamp,
       );
-      history = items.map(toHistory);
+      history = items.map((item) => toHistory(item));
       if (!history.some((m) => m.id === message.id)) {
         history.push(toHistory(message));
       }
@@ -219,46 +289,113 @@ async function loadHistory(message: Message): Promise<HistoryMessage[]> {
     }
   }
 
-  let referenced: HistoryMessage | null = null;
-  if (message.reference?.messageId) {
+  const replyChain: HistoryMessage[] = [];
+  let cursor = message;
+  for (let depth = 0; depth < CHATBOT_REPLY_CHAIN_DEPTH; depth++) {
+    if (!cursor.reference?.messageId) break;
     try {
       const ref =
-        "fetchReference" in message && typeof message.fetchReference === "function"
-          ? await message.fetchReference()
-          : await channel.messages.fetch(message.reference.messageId);
-      if (ref && "author" in ref) referenced = toHistory(ref as Message);
+        "fetchReference" in cursor && typeof cursor.fetchReference === "function"
+          ? await cursor.fetchReference()
+          : await cursor.channel.messages.fetch(cursor.reference.messageId);
+      if (!ref || !("author" in ref)) break;
+      cursor = ref as Message;
+      replyChain.unshift(toHistory(cursor, true));
     } catch {
-      // referenced message gone
+      break;
     }
   }
 
-  return mergeReferenced(history, referenced);
+  const current = toHistory(message, true);
+  const priorityMessages = [...replyChain, current];
+  const priorityById = new Map(priorityMessages.map((item) => [item.id, item]));
+  history = history.map((item) => priorityById.get(item.id) ?? item);
+
+  const ids = new Set(history.map((item) => item.id));
+  const missingAncestors = replyChain.filter((item) => !ids.has(item.id));
+  if (!ids.has(current.id)) history.push(current);
+  return [...missingAncestors, ...history];
 }
 
-async function replyTo(message: Message, botId: string): Promise<void> {
+function feedbackRow(messageId: string): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`chatfb_${messageId}_up`)
+      .setLabel("Útil")
+      .setEmoji("👍")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`chatfb_${messageId}_down`)
+      .setLabel("No útil")
+      .setEmoji("👎")
+      .setStyle(ButtonStyle.Secondary),
+  );
+}
+
+async function replyTo(
+  message: Message,
+  botId: string,
+  notifyFailure: boolean,
+): Promise<void> {
   const history = await loadHistory(message);
-  const turns = buildChatMessages(history, botId);
+  const turns = buildChatMessages(
+    history,
+    botId,
+    env.AI_CHAT_VISION_ENABLED === true,
+  );
   if (turns.length === 0) return;
 
   if (
     "sendTyping" in message.channel &&
     typeof message.channel.sendTyping === "function"
   ) {
-    void message.channel.sendTyping();
+    void message.channel.sendTyping().catch((error) => {
+      logger.warn(`chatbot: failed to send typing indicator: ${error}`);
+    });
   }
 
-  const raw = await AIClientService.chatMessages(
+  const result = await AIClientService.chatMessagesDetailed(
     CHATBOT_SYSTEM_PROMPT,
     turns,
-    { temperature: CHATBOT_TEMPERATURE, timeoutMs: CHATBOT_TIMEOUT_MS },
+    {
+      temperature: CHATBOT_TEMPERATURE,
+      timeoutMs: CHATBOT_TIMEOUT_MS,
+      maxOutputTokens: CHATBOT_MAX_OUTPUT_TOKENS,
+    },
   );
-  const content = raw ? sanitizeChatbotOutput(raw) : "";
-  if (!content) return;
+  const content = result ? sanitizeChatbotOutput(result.text) : "";
+  if (!result || !content) {
+    if (notifyFailure) {
+      await message.reply({
+        content: "No pude responder ahora. Inténtalo de nuevo en un momento.",
+        allowedMentions: { parse: [], repliedUser: true },
+      });
+    }
+    return;
+  }
 
-  await message.reply({
+  const response = await message.reply({
     content,
     allowedMentions: { parse: [], repliedUser: true },
   });
+
+  try {
+    await ChatFeedbackService.record({
+      guildId: message.guildId!,
+      channelId: message.channelId,
+      requestMessageId: message.id,
+      responseMessageId: response.id,
+      requesterId: message.author.id,
+      model: result.model,
+      latencyMs: result.latencyMs,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      finishReason: result.finishReason,
+    });
+    await response.edit({ components: [feedbackRow(message.id)] });
+  } catch (error) {
+    logger.warn(`chatbot: failed to record response metrics: ${error}`);
+  }
 
   lastBotReply.set(message.channelId, {
     userId: message.author.id,
@@ -277,7 +414,17 @@ async function drainChannel(channelId: string, first: PendingTurn): Promise<void
     let current: PendingTurn | undefined = first;
     while (current) {
       try {
-        await replyTo(current.message, current.botId);
+        const guildId = current.message.guildId;
+        const config = guildId
+          ? await AiChatConfigService.getConfig(guildId)
+          : null;
+        const allowed =
+          !!config?.enabled &&
+          (current.priority ||
+            (config.mode !== "mentions" && config.channelId === channelId));
+        if (allowed) {
+          await replyTo(current.message, current.botId, current.priority);
+        }
       } catch (error) {
         logger.error("Error in chatbot reply", error);
       }
@@ -342,6 +489,7 @@ export async function handleChatbot(message: Message): Promise<void> {
 
     const respond = shouldRespond({
       enabled: true,
+      ambientEnabled: config.mode !== "mentions",
       isAiChannel,
       mentionedBot,
       replyToBot,
@@ -356,10 +504,16 @@ export async function handleChatbot(message: Message): Promise<void> {
 
     if (!respond) return;
 
+    const priority = mentionedBot || replyToBot;
+    if (!consumeRateLimit(guildId, message.author.id, now)) {
+      if (priority) void message.react("⏳").catch(() => {});
+      return;
+    }
+
     await drainChannel(message.channelId, {
       message,
       botId,
-      priority: mentionedBot || replyToBot,
+      priority,
     });
   } catch (error) {
     logger.error("Error in handleChatbot", error);

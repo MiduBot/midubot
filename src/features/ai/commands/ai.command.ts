@@ -1,10 +1,13 @@
 import { ChannelType, Message, PermissionFlagsBits } from "discord.js";
-import { env, isSuperdev } from "@/config/env";
+import { isSuperdev } from "@/config/env";
 import { AIClientService } from "@/features/ai-mod";
 import { LanguageService } from "@/features/language";
 import { getTranslation } from "@/i18n";
 import { logger } from "@/core/logger";
-import { AiChatConfigService } from "../services/ai-chat-config.service";
+import {
+  AiChatConfigService,
+  type AiChatMode,
+} from "../services/ai-chat-config.service";
 
 const TEST_SYSTEM = "Responde de forma breve y concisa. No uses markdown.";
 const TEST_USER = "Di 'La IA está funcionando correctamente' y nada más.";
@@ -59,6 +62,10 @@ export async function handleAiCommand(
       await handleChannel(message, guildId, args.slice(1), t, prefix);
       return;
     }
+    if (sub === "mode") {
+      await handleMode(message, guildId, args.slice(1), t, prefix);
+      return;
+    }
 
     await message.reply(usage);
   } catch (error) {
@@ -77,8 +84,33 @@ async function replyStatus(
   const channel = config.channelId
     ? `<#${config.channelId}>`
     : t.ai.status_no_channel;
+  const mode = config.mode === "mentions" ? t.ai.mode_mentions : t.ai.mode_ambient;
   await message.reply(
-    t.ai.status.replace("{state}", state).replace("{channel}", channel),
+    t.ai.status
+      .replace("{state}", state)
+      .replace("{channel}", channel)
+      .replace("{mode}", mode),
+  );
+}
+
+async function handleMode(
+  message: Message,
+  guildId: string,
+  args: string[],
+  t: ReturnType<typeof getTranslation>,
+  prefix: string,
+): Promise<void> {
+  const mode = args[0]?.toLowerCase() as AiChatMode | undefined;
+  if (mode !== "ambient" && mode !== "mentions") {
+    await message.reply(t.ai.mode_usage.replace("{prefix}", prefix));
+    return;
+  }
+  await AiChatConfigService.setMode(guildId, mode);
+  await message.reply(
+    t.ai.mode_set.replace(
+      "{mode}",
+      mode === "ambient" ? t.ai.mode_ambient : t.ai.mode_mentions,
+    ),
   );
 }
 
@@ -156,10 +188,14 @@ async function runTest(
   const start = Date.now();
 
   try {
-    const response = await AIClientService.chat(TEST_SYSTEM, TEST_USER);
+    const result = await AIClientService.chatMessagesDetailed(
+      TEST_SYSTEM,
+      [{ role: "user", content: TEST_USER }],
+      { temperature: 0 },
+    );
     const elapsed = Date.now() - start;
 
-    if (response === null) {
+    if (!result) {
       await reply.edit(t.ai.fail);
       return;
     }
@@ -167,8 +203,8 @@ async function runTest(
     await reply.edit(
       t.ai.ok
         .replace("{elapsed}", String(elapsed))
-        .replace("{model}", env.AI_MODEL)
-        .replace("{response}", response.slice(0, 1800)),
+        .replace("{model}", result.model)
+        .replace("{response}", result.text.slice(0, 1800)),
     );
   } catch (error) {
     logger.error("ai test command error", error);

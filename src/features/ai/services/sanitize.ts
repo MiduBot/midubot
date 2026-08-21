@@ -20,6 +20,10 @@ export function sanitizeChatbotOutput(text: string): string {
   out = out.replace(/@everyone/gi, "@\u200beveryone");
   out = out.replace(/@here/gi, "@\u200bhere");
   out = out.replace(/<@&\d+>/g, "");
+  out = out.replace(
+    /(?:https?:\/\/)?(?:www\.)?(?:discord\.gg|discord(?:app)?\.com\/invite)\/\S+/gi,
+    "",
+  );
   out = out.replace(/\s{2,}/g, " ").trim();
 
   if (out.length > CHATBOT_OUTPUT_MAX_CHARS) {

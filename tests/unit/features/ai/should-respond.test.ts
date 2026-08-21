@@ -11,6 +11,7 @@ const now = 1_000_000_000;
 function input(overrides: Partial<ShouldRespondInput> = {}): ShouldRespondInput {
   return {
     enabled: true,
+    ambientEnabled: true,
     isAiChannel: false,
     mentionedBot: false,
     replyToBot: false,
@@ -63,6 +64,21 @@ describe("shouldRespond", () => {
 
   it("does not jump into other channels without mention or reply", () => {
     expect(shouldRespond(input({ isAiChannel: false }))).toBe(false);
+  });
+
+  it("keeps ambient mode quiet without a mention or reply", () => {
+    expect(
+      shouldRespond(
+        input({
+          ambientEnabled: false,
+          isAiChannel: true,
+          lastHumanMessageAt: null,
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      shouldRespond(input({ ambientEnabled: false, mentionedBot: true })),
+    ).toBe(true);
   });
 
   it("breaks silence in the AI channel", () => {
