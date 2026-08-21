@@ -65,7 +65,7 @@ function normalizeBaseUrl(url: string): string {
   return url.replace(/\/chat\/completions\/?$/, "").replace(/\/$/, "");
 }
 
-const clineFetch: typeof fetch = async (input, init) => {
+const clineFetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
   const response = await fetch(input, init);
 
   if (response.status === 200) {
@@ -91,7 +91,7 @@ const clineFetch: typeof fetch = async (input, init) => {
   }
 
   return response;
-};
+}, { preconnect: fetch.preconnect });
 
 export class AIClientService {
   /**

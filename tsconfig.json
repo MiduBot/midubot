@@ -2,6 +2,7 @@
   "compilerOptions": {
     "module": "esnext",
     "target": "ESNext",
+    "types": ["bun"],
     "moduleResolution": "bundler",
     "strict": true,
     "noUnusedLocals": true,
