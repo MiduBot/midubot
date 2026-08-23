@@ -17,6 +17,10 @@ export interface AIGenerationResult {
   finishReason: string;
 }
 
+export type AIGenerationAttempt =
+  | { status: "ok"; result: AIGenerationResult }
+  | { status: "timeout" | "provider_error"; error: string };
+
 export interface ChatOptions {
   temperature?: number;
   timeoutMs?: number;
@@ -102,7 +106,7 @@ export class AIClientService {
     systemPrompt: string,
     userPrompt: string,
   ): Promise<string | null> {
-    const result = await this.generate(
+    const attempt = await this.generateAttempt(
       systemPrompt,
       [{ role: "user", content: userPrompt }],
       {
@@ -111,7 +115,7 @@ export class AIClientService {
         model: env.AI_MODEL,
       },
     );
-    return result?.text ?? null;
+    return attempt.status === "ok" ? attempt.result.text : null;
   }
 
   static async chatMessages(
@@ -128,7 +132,16 @@ export class AIClientService {
     messages: ChatTurn[],
     options?: ChatOptions,
   ): Promise<AIGenerationResult | null> {
-    return this.generate(systemPrompt, messages, {
+    const attempt = await this.chatMessagesAttempt(systemPrompt, messages, options);
+    return attempt.status === "ok" ? attempt.result : null;
+  }
+
+  static async chatMessagesAttempt(
+    systemPrompt: string,
+    messages: ChatTurn[],
+    options?: ChatOptions,
+  ): Promise<AIGenerationAttempt> {
+    return this.generateAttempt(systemPrompt, messages, {
       temperature: options?.temperature ?? 0.9,
       timeoutMs: options?.timeoutMs ?? 25_000,
       maxOutputTokens: options?.maxOutputTokens,
@@ -136,7 +149,7 @@ export class AIClientService {
     });
   }
 
-  private static async generate(
+  private static async generateAttempt(
     systemPrompt: string,
     messages: ChatTurn[],
     options: {
@@ -145,20 +158,22 @@ export class AIClientService {
       maxOutputTokens?: number;
       model: string;
     },
-  ): Promise<AIGenerationResult | null> {
-    if (!env.AI_API_URL || !env.AI_API_KEY) return null;
+  ): Promise<AIGenerationAttempt> {
+    if (!env.AI_API_URL || !env.AI_API_KEY) {
+      return { status: "provider_error", error: "AI API is not configured" };
+    }
 
     const startedAt = Date.now();
     const acquired = await acquireRequestSlot(options.timeoutMs);
     if (!acquired) {
       logger.warn("AIClientService: timed out waiting for a request slot");
-      return null;
+      return { status: "timeout", error: "Timed out waiting for a request slot" };
     }
 
     const remainingMs = options.timeoutMs - (Date.now() - startedAt);
     if (remainingMs <= 0) {
       releaseRequestSlot();
-      return null;
+      return { status: "timeout", error: "Timed out waiting for a request slot" };
     }
     try {
       const provider = createOpenAICompatible({
@@ -189,10 +204,14 @@ export class AIClientService {
       logger.info(
         `AIClientService: model=${response.model} latencyMs=${response.latencyMs} inputTokens=${response.inputTokens ?? "?"} outputTokens=${response.outputTokens ?? "?"} finish=${response.finishReason}`,
       );
-      return response;
+      return { status: "ok", result: response };
     } catch (e) {
       logger.warn(`AIClientService: AI request failed: ${e}`);
-      return null;
+      const timedOut = e instanceof DOMException && e.name === "TimeoutError";
+      return {
+        status: timedOut ? "timeout" : "provider_error",
+        error: e instanceof Error ? e.message : String(e),
+      };
     } finally {
       releaseRequestSlot();
     }
