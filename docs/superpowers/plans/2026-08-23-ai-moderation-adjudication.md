@@ -6,7 +6,7 @@
 
 **Architecture:** Keep `ai-mod` and `job-guard` as feature adapters around a shared `ai-moderation` module. Shared code owns parsing, dual evaluation, adjudication, immutable runs, idempotent actions, reviews, correction context, and operations; feature code owns triggers, policy prompts, candidate collection, bypasses, and Discord actions.
 
-**Tech Stack:** Bun 1.3.12, TypeScript 6, discord.js 14, Vercel AI SDK 7, Drizzle ORM 0.45, Turso/libSQL, Bun test.
+**Tech Stack:** Bun 1.4.0, TypeScript 6, discord.js 14, Vercel AI SDK 7, Drizzle ORM 0.45, Turso/libSQL, Bun test.
 
 ## Global Constraints
 

@@ -32,6 +32,8 @@ const imageDupMock = {
 };
 const casesMock = { insert: mock(async () => 1) };
 const logChannelMock = { getLogChannel: mock(async () => null) };
+const downloadFingerprintMock = mock(async () => ({ hash: "fingerprint" }));
+const addImageMock = mock(async () => undefined);
 
 mock.module("@/features/ai-mod/services/ai-mod-config.service", () => ({ AiModConfigService: configMock }));
 mock.module("@/features/ai-mod/services/mod-role.service", () => ({ ModRoleService: modRoleMock }));
@@ -42,6 +44,10 @@ mock.module("@/features/ai-mod/services/classifier.service", () => ({ classifyBa
 mock.module("@/features/ai-mod/services/image-duplicate.service", () => ({ ImageDuplicateService: imageDupMock }));
 mock.module("@/features/ai-mod/services/cases.service", () => ({ CasesService: casesMock }));
 mock.module("@/features/log-channel", () => ({ LogChannelService: logChannelMock }));
+mock.module("@/features/images", () => ({
+  ImageHashService: { downloadFingerprint: downloadFingerprintMock },
+  ImageService: { addImage: addImageMock },
+}));
 mock.module("@/features/puff", () => ({
   extractPuffContent: (m: { content: string; attachments: { size: number } }) =>
     m.attachments.size > 0 ? { kind: "image", imageUrls: ["x"] } : m.content ? { kind: "text", text: m.content } : null,
@@ -63,6 +69,10 @@ beforeEach(() => {
     channelCount: 1,
     matchedMessages: [],
   }));
+  downloadFingerprintMock.mockClear();
+  downloadFingerprintMock.mockImplementation(async () => ({ hash: "fingerprint" }));
+  addImageMock.mockClear();
+  addImageMock.mockImplementation(async () => undefined);
 });
 
 describe("handleModMention", () => {
@@ -191,6 +201,8 @@ describe("handleModMention", () => {
     const msg = makeReportMessage("r1", { channelMessages: [candidate] });
     await handleModMention(msg);
     expect(imageDupMock.checkImage).toHaveBeenCalled();
+    expect(downloadFingerprintMock).toHaveBeenCalledWith("https://x/img.png");
+    expect(addImageMock).toHaveBeenCalledWith("g1", "aimod-cand1-0", "https://x/img.png");
     expect(candidate.delete).toHaveBeenCalled();
   });
 
