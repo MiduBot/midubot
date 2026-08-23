@@ -1,6 +1,7 @@
 import type { Message, TextChannel, Guild } from "discord.js";
 import { ChannelType, PermissionFlagsBits } from "discord.js";
 import { env } from "@/config/env";
+import { isIgnored } from "@/core/discord/ignored-channels";
 import { logger } from "@/core/logger";
 import { safeDelete, safeTimeout, extractImageUrls } from "@/core/discord/moderation";
 import { LogChannelService } from "@/features/log-channel";
@@ -57,6 +58,11 @@ export async function handleModMention(message: Message): Promise<void> {
     // If the reporter already has ManageMessages, they can handle it themselves.
     if (message.member?.permissions.has(PermissionFlagsBits.ManageMessages)) return;
 
+    const parentId = "parentId" in message.channel
+      ? (message.channel.parentId ?? null)
+      : null;
+    if (await isIgnored(guildId, { id: message.channelId, parentId })) return;
+
     if (!env.AI_API_URL || !env.AI_API_KEY) {
       logger.warn("ai-mod: AI env missing, feature disabled");
       return;
@@ -104,17 +110,8 @@ export async function handleModMention(message: Message): Promise<void> {
         context,
       );
       if (!result.ok) {
-        // AI failure → still act (timeout + delete + alert + feedback).
-        for (const c of textCandidates) {
-          flagged.push({
-            message: c.message,
-            verdict: 1,
-            confidence: 0,
-            platform: 0,
-            reason: t.aiMod.reason_ai_fallback,
-            fromImage: false,
-          });
-        }
+        logger.warn(`ai-mod: classification failed for report ${message.id}; no action taken`);
+        return;
       } else {
         for (const entry of result.entries) {
           if (entry.v === 0) continue;
@@ -360,6 +357,8 @@ async function sendFlaggedAlert(
       authorTag: f.message.author.tag,
       authorId: f.message.author.id,
       channelId: f.message.channelId,
+      content: f.message.content || "(imagen)",
+      reportContent: trigger.content,
       confidence: f.confidence,
       platform: f.platform,
       verdict: f.verdict,

@@ -17,6 +17,9 @@ const envMock = {
   LOG_LEVEL: "error",
 };
 mock.module("@/config/env", () => ({ env: envMock }));
+mock.module("@/core/discord/ignored-channels", () => ({
+  isIgnored: mock(async () => false),
+}));
 
 const configMock = { isEnabled: mock(async () => true) };
 const modRoleMock = { hasRole: mock(async () => true) };

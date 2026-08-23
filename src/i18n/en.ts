@@ -302,6 +302,8 @@ export const en = {
     precaution_desc: "Candidate messages for manual review:",
     field_author: "Author",
     field_channel: "Channel",
+    field_message: "Reviewed message",
+    field_report: "Report that triggered review",
     field_confidence: "Confidence",
     field_platform: "Platform",
     field_reason: "AI reason",

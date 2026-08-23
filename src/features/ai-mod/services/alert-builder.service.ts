@@ -11,6 +11,8 @@ export interface FlaggedEmbedInput {
   authorTag: string;
   authorId: string;
   channelId: string;
+  content: string;
+  reportContent: string;
   confidence: number;
   platform: number;
   verdict: number;
@@ -25,6 +27,10 @@ const PLATFORM_LABEL: Record<number, string> = {
   3: "X / Instagram",
   4: "Otra",
 };
+
+function neutralizeMentions(value: string): string {
+  return value.replaceAll("@", "@\u200b");
+}
 
 export function buildPingString(
   targets: { targetId: string; targetType: "user" | "role" }[],
@@ -73,11 +79,18 @@ export function buildFlaggedEmbed(
   // Low-confidence / fallback: amber; high-confidence malicious: red; selfpromo platform bypass-ish: amber.
   const embedColor =
     !highConfidence ? 0xffaa00 : color;
+  const targetContent = neutralizeMentions(input.content || "(sin texto)");
+  const reportContent = neutralizeMentions(input.reportContent || "(sin texto adicional)");
+  const description = `**${t.aiMod.field_message}**\n${targetContent.slice(0, 3500)}`;
 
   const embed = new EmbedBuilder()
     .setColor(embedColor)
     .setTitle(title)
-    .addFields(fields)
+    .setDescription(description)
+    .addFields(
+      ...fields,
+      { name: t.aiMod.field_report, value: reportContent.slice(0, 1024), inline: false },
+    )
     .setFooter({ text: t.aiMod.footer_case_id.replace("{id}", String(input.caseId)) })
     .setTimestamp();
 

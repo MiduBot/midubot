@@ -22,6 +22,29 @@ describe("buildPingString", () => {
 });
 
 describe("buildFlaggedEmbed", () => {
+  it("shows target content and report content", () => {
+    const { embed } = buildFlaggedEmbed(
+      {
+        caseId: 42,
+        authorTag: "spammer#0001",
+        authorId: "u1",
+        channelId: "c1",
+        content: "Vendo hosting Stelar Cloud https://example.test",
+        reportContent: "@staff revisen esto",
+        confidence: 0.95,
+        platform: 4,
+        verdict: 2,
+        reason: "servicio propio",
+        actionLabel: t.aiMod.action_timeout,
+      },
+      t,
+    );
+
+    const data = embed.toJSON();
+    expect(data.description).toContain("Vendo hosting Stelar Cloud");
+    expect(JSON.stringify(data.fields)).toContain("@\u200bstaff revisen esto");
+  });
+
   it("builds an embed with buttons for a malicious verdict", () => {
     const { embed, components } = buildFlaggedEmbed(
       {
@@ -29,6 +52,8 @@ describe("buildFlaggedEmbed", () => {
         authorTag: "spammer#0001",
         authorId: "u1",
         channelId: "c1",
+        content: "send me a DM",
+        reportContent: "<@&r1>",
         confidence: 0.9,
         platform: 0,
         verdict: 1,
@@ -52,14 +77,14 @@ describe("buildFlaggedEmbed", () => {
 
   it("includes platform field only for v=2", () => {
     const withPlatform = buildFlaggedEmbed(
-      { caseId: 1, authorTag: "x", authorId: "u", channelId: "c", confidence: 0.8, platform: 4, verdict: 2, reason: "r", actionLabel: t.aiMod.action_timeout },
+      { caseId: 1, authorTag: "x", authorId: "u", channelId: "c", content: "promo", reportContent: "report", confidence: 0.8, platform: 4, verdict: 2, reason: "r", actionLabel: t.aiMod.action_timeout },
       t,
     );
     const fields = (withPlatform.embed.toJSON().fields ?? []).map((f) => f.name);
     expect(fields).toContain(t.aiMod.field_platform);
 
     const noPlatform = buildFlaggedEmbed(
-      { caseId: 1, authorTag: "x", authorId: "u", channelId: "c", confidence: 0.9, platform: 0, verdict: 1, reason: "r", actionLabel: t.aiMod.action_timeout },
+      { caseId: 1, authorTag: "x", authorId: "u", channelId: "c", content: "scam", reportContent: "report", confidence: 0.9, platform: 0, verdict: 1, reason: "r", actionLabel: t.aiMod.action_timeout },
       t,
     );
     const fieldsNoP = (noPlatform.embed.toJSON().fields ?? []).map((f) => f.name);

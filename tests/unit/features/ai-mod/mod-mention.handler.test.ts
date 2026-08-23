@@ -35,7 +35,9 @@ const logChannelMock = { getLogChannel: mock(async () => null) };
 const languageMock = { getLanguage: mock(async () => "es" as const) };
 const downloadFingerprintMock = mock(async () => ({ hash: "fingerprint" }));
 const addImageMock = mock(async () => undefined);
+const isIgnoredMock = mock(async () => false);
 
+mock.module("@/core/discord/ignored-channels", () => ({ isIgnored: isIgnoredMock }));
 mock.module("@/features/ai-mod/services/ai-mod-config.service", () => ({ AiModConfigService: configMock }));
 mock.module("@/features/ai-mod/services/mod-role.service", () => ({ ModRoleService: modRoleMock }));
 mock.module("@/features/ai-mod/services/selfpromo-bypass.service", () => ({ SelfpromoBypassService: bypassMock }));
@@ -58,6 +60,8 @@ mock.module("@/features/puff", () => ({
 import { handleModMention } from "@/features/ai-mod/handlers/mod-mention.handler";
 
 beforeEach(() => {
+  isIgnoredMock.mockClear();
+  isIgnoredMock.mockImplementation(async () => false);
   configMock.isEnabled.mockImplementation(async () => true);
   modRoleMock.hasRole.mockImplementation(async () => true);
   classifyMock.mockImplementation(async () => ({ ok: false, entries: [] }) as never);
@@ -157,13 +161,35 @@ describe("handleModMention", () => {
     expect(classifyMock).toHaveBeenCalledTimes(1);
   });
 
-  it("on AI failure, still deletes text candidates (fallback action)", async () => {
+  it("does not delete, timeout, or insert a case when AI fails", async () => {
     classifyMock.mockImplementation(async () => ({ ok: false, entries: [] }) as never);
-    const candidate = createMockMessage({ id: "cand1", content: "hola", channelId: "c1", guildId: "g1" });
-    const msg = makeReportMessage("r1", { channelMessages: [candidate] });
-    await handleModMention(msg);
-    expect(candidate.delete).toHaveBeenCalled();
-    expect(casesMock.insert).toHaveBeenCalledTimes(1);
+    const candidate = createMockMessage({
+      id: "cand1",
+      content: "hola",
+      channelId: "c1",
+      guildId: "g1",
+    });
+    const report = makeReportMessage("r1", { channelMessages: [candidate] });
+
+    await handleModMention(report);
+
+    expect(candidate.delete).not.toHaveBeenCalled();
+    expect(casesMock.insert).not.toHaveBeenCalled();
+  });
+
+  it("returns before classification for an ignored channel", async () => {
+    isIgnoredMock.mockImplementation(async () => true);
+    const candidate = createMockMessage({
+      id: "cand1",
+      content: "hola",
+      channelId: "c1",
+      guildId: "g1",
+    });
+    const report = makeReportMessage("r1", { channelMessages: [candidate] });
+
+    await handleModMention(report);
+
+    expect(classifyMock).not.toHaveBeenCalled();
   });
 
   it("on a high-confidence malicious verdict, deletes the flagged message", async () => {

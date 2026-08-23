@@ -303,6 +303,8 @@ export const es = {
     precaution_desc: "Mensajes candidatos para revisión manual:",
     field_author: "Autor",
     field_channel: "Canal",
+    field_message: "Mensaje revisado",
+    field_report: "Reporte que activó la revisión",
     field_confidence: "Confianza",
     field_platform: "Plataforma",
     field_reason: "Razón IA",
