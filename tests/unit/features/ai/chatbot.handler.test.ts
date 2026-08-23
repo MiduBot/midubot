@@ -229,7 +229,7 @@ describe("handleChatbot", () => {
     await handleChatbot(first);
     await handleChatbot(second);
     expect(chatMessagesMock).toHaveBeenCalledTimes(1);
-    expect(second.react).toHaveBeenCalledWith("⏳");
+    expect(second.react).not.toHaveBeenCalled();
   });
 
   it("does not reply when a mod role is mentioned", async () => {

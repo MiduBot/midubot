@@ -484,7 +484,6 @@ export async function handleChatbot(message: Message): Promise<void> {
 
     const priority = mentionedBot || replyToBot;
     if (!consumeRateLimit(guildId, message.author.id, now)) {
-      if (priority) void message.react("⏳").catch(() => {});
       return;
     }
 
