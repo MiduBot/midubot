@@ -32,6 +32,7 @@ const imageDupMock = {
 };
 const casesMock = { insert: mock(async () => 1) };
 const logChannelMock = { getLogChannel: mock(async () => null) };
+const languageMock = { getLanguage: mock(async () => "es" as const) };
 const downloadFingerprintMock = mock(async () => ({ hash: "fingerprint" }));
 const addImageMock = mock(async () => undefined);
 
@@ -44,6 +45,7 @@ mock.module("@/features/ai-mod/services/classifier.service", () => ({ classifyBa
 mock.module("@/features/ai-mod/services/image-duplicate.service", () => ({ ImageDuplicateService: imageDupMock }));
 mock.module("@/features/ai-mod/services/cases.service", () => ({ CasesService: casesMock }));
 mock.module("@/features/log-channel", () => ({ LogChannelService: logChannelMock }));
+mock.module("@/features/language", () => ({ LanguageService: languageMock }));
 mock.module("@/features/images", () => ({
   ImageHashService: { downloadFingerprint: downloadFingerprintMock },
   ImageService: { addImage: addImageMock },
@@ -69,6 +71,8 @@ beforeEach(() => {
     channelCount: 1,
     matchedMessages: [],
   }));
+  languageMock.getLanguage.mockClear();
+  languageMock.getLanguage.mockImplementation(async () => "es" as const);
   downloadFingerprintMock.mockClear();
   downloadFingerprintMock.mockImplementation(async () => ({ hash: "fingerprint" }));
   addImageMock.mockClear();
