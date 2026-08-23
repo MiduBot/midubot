@@ -10,3 +10,4 @@ export * from "./ai-mod";
 export * from "./job-guard";
 export * from "./ai-chat";
 export * from "./bot-instance";
+export * from "./ai-moderation";

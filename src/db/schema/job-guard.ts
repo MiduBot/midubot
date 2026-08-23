@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 
 export const jobGuardCasesTable = sqliteTable("job_guard_cases", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  moderationTargetId: integer("moderation_target_id"),
   guildId: text("guild_id").notNull(),
   authorId: text("author_id").notNull(),
   channelId: text("channel_id").notNull(),

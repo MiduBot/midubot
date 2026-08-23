@@ -90,6 +90,7 @@ export const aiModPromptsTable = sqliteTable("ai_mod_ai_prompts", {
 
 export const aiModCasesTable = sqliteTable("ai_mod_cases", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  moderationTargetId: integer("moderation_target_id"),
   guildId: text("guild_id").notNull(),
   authorId: text("author_id").notNull(),
   channelId: text("channel_id").notNull(),
