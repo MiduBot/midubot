@@ -14,4 +14,5 @@ export {
   type PersistedRun,
   type PersistRunInput,
 } from "./services/runs.service";
+export { ModerationReviewService } from "./services/review.service";
 export type * from "./types";

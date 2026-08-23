@@ -82,8 +82,15 @@ export function createMockDb() {
     });
   }
 
+  async function transaction<T>(
+    callback: (tx: typeof import("@/db/connection").db) => Promise<T>,
+  ): Promise<T> {
+    return callback(db as typeof import("@/db/connection").db);
+  }
+
   const db = {
     query,
+    transaction,
     run: (..._args: unknown[]) =>
       mutationOps.get("run")?.() ?? Promise.resolve(undefined),
     insert: (..._args: unknown[]) =>
