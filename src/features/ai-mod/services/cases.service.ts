@@ -3,6 +3,7 @@ import { aiModCasesTable } from "@/db/schema";
 import { and, count, desc, eq, SQL } from "drizzle-orm";
 
 export interface CaseInsertPayload {
+  moderationTargetId?: number | null;
   guildId: string;
   authorId: string;
   channelId: string;
@@ -13,12 +14,15 @@ export interface CaseInsertPayload {
   platform: number;
   reason: string;
   actionTaken: string;
+  resolved?: boolean;
+  resolvedBy?: string | null;
+  resolvedAction?: string | null;
 }
 
 export type CaseFilter = "pending" | "resolved" | "all";
 export type FeedbackAction = "correct" | "incorrect";
 
-export interface CaseRow extends CaseInsertPayload {
+export interface CaseRow extends Omit<CaseInsertPayload, "resolvedAction"> {
   id: number;
   resolved: boolean;
   resolvedBy: string | null;

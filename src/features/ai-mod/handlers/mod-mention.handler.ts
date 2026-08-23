@@ -20,14 +20,41 @@ import { ImageDuplicateService } from "../services/image-duplicate.service";
 import { CasesService } from "../services/cases.service";
 import { SanctionCache } from "../services/sanction-cache.service";
 import {
+  AI_MOD_POLICY,
+  buildAiModPrompts,
+  buildAiModUserPrompt,
+} from "../services/moderation-policy.service";
+import {
+  classifySelfpromoPlatform,
+} from "../services/selfpromo-platform.service";
+import {
+  collectReportEvidence,
+  type ReportEvidence,
+} from "../services/report-evidence.service";
+import { enforceAiModDecision } from "../services/moderation-enforcement.service";
+import {
   buildFlaggedEmbed,
   buildPrecautionEmbed,
   buildPingString,
 } from "../services/alert-builder.service";
+import {
+  adjudicate,
+  evaluateDual,
+  ModerationConfigService,
+  ModerationReviewService,
+  ModerationRunsService,
+} from "@/features/ai-moderation";
+import type {
+  AdjudicationResult,
+  DualEvaluationResult,
+  EvaluationAttempt,
+  ModerationCandidate,
+  ModerationLabel,
+  ModerationMode,
+} from "@/features/ai-moderation";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ALERT_THRESHOLD = 0.5;
-const CANDIDATE_LIMIT = 10;
 const BYPASS_PLATFORMS = new Set([1, 2, 3]);
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -47,6 +74,185 @@ interface PrecautionCandidate {
   confidence: number;
   platform: number;
   reason: string;
+}
+
+interface PreparedAdjudication {
+  evaluation: DualEvaluationResult;
+  adjudication: AdjudicationResult;
+  runId: number;
+  targetIdsByCandidate: Map<number, number>;
+}
+
+function firstViolation(attempts: readonly EvaluationAttempt[]): {
+  attempt: Extract<EvaluationAttempt, { status: "ok" }>;
+  target: { candidateIndex: number; label: ModerationLabel };
+} | null {
+  for (const attempt of attempts) {
+    if (attempt.status !== "ok" || attempt.evaluation.outcome !== "violation") continue;
+    const target = attempt.evaluation.targets[0];
+    if (target) return { attempt, target };
+  }
+  return null;
+}
+
+function platformNumber(content: string): number {
+  switch (classifySelfpromoPlatform(content)) {
+    case "youtube": return 1;
+    case "linkedin": return 2;
+    case "x-instagram": return 3;
+    default: return 0;
+  }
+}
+
+function targetDetails(
+  candidateIndex: number,
+  evaluation: DualEvaluationResult,
+  adjudication: AdjudicationResult,
+): { label: ModerationLabel; confidence: number; reason: string } {
+  for (const attempt of [evaluation.primary, evaluation.judge]) {
+    if (attempt.status !== "ok") continue;
+    const target = attempt.evaluation.targets.find((entry) => entry.candidateIndex === candidateIndex);
+    if (target) {
+      return {
+        label: target.label,
+        confidence: attempt.evaluation.confidence,
+        reason: attempt.evaluation.reason,
+      };
+    }
+  }
+  return {
+    label: adjudication.targets.find((target) => target.candidateIndex === candidateIndex)?.label ?? "malicious",
+    confidence: 0,
+    reason: adjudication.reason,
+  };
+}
+
+function toFlaggedCandidate(
+  candidate: ModerationCandidate,
+  message: Message,
+  details: ReturnType<typeof targetDetails>,
+): FlaggedCandidate {
+  return {
+    message,
+    verdict: details.label === "selfpromo" ? 2 : 1,
+    confidence: details.confidence,
+    platform: details.label === "selfpromo" ? platformNumber(candidate.content) : 0,
+    reason: details.reason,
+    fromImage: candidate.content === "(image)",
+  };
+}
+
+async function sendPersistenceFailureAlert(
+  report: Message,
+  t: ReturnType<typeof getTranslation>,
+  evidence: ReportEvidence,
+  evaluation: DualEvaluationResult,
+): Promise<void> {
+  const detected = firstViolation([evaluation.primary, evaluation.judge]);
+  if (!detected) return;
+  const candidate = evidence.candidates.find((item) => item.index === detected.target.candidateIndex);
+  const targetMessage = candidate ? evidence.messagesByIndex.get(candidate.index) : undefined;
+  if (!candidate || !targetMessage) return;
+  await sendFlaggedAlert(
+    report,
+    report.guild!.id,
+    t,
+    toFlaggedCandidate(candidate, targetMessage, {
+      label: detected.target.label,
+      confidence: detected.attempt.evaluation.confidence,
+      reason: "Persistencia falló; no se aplicó ninguna acción",
+    }),
+    t.aiMod.action_alert_only,
+    0,
+    false,
+  );
+}
+
+async function prepareAdjudication(
+  message: Message,
+  guildId: string,
+  mode: ModerationMode,
+  evidence: ReportEvidence,
+  t: ReturnType<typeof getTranslation>,
+): Promise<PreparedAdjudication | null> {
+  const correctionContext = await ModerationReviewService.listCorrectionContext(guildId, "ai-mod");
+  const prompts = buildAiModPrompts(correctionContext);
+  const evaluation = await evaluateDual({
+    candidates: evidence.candidates,
+    policy: AI_MOD_POLICY,
+    primarySystemPrompt: prompts.primary,
+    judgeSystemPrompt: prompts.judge,
+    userPrompt: buildAiModUserPrompt(evidence.reportContent, evidence.candidates),
+  });
+  const adjudication = adjudicate({
+    primary: evaluation.primary,
+    judge: evaluation.judge,
+    policy: AI_MOD_POLICY,
+  });
+
+  try {
+    const persisted = await ModerationRunsService.create({
+      guildId,
+      feature: "ai-mod",
+      mode,
+      triggerMessageId: message.id,
+      reporterId: message.author.id,
+      reportContent: evidence.reportContent,
+      candidates: evidence.candidates,
+      evaluation,
+      adjudication,
+    });
+    return {
+      evaluation,
+      adjudication,
+      runId: persisted.runId,
+      targetIdsByCandidate: persisted.targetIdsByCandidate,
+    };
+  } catch (error) {
+    logger.warn(`ai-mod: failed to persist moderation run: ${error}`);
+    await sendPersistenceFailureAlert(message, t, evidence, evaluation);
+    return null;
+  }
+}
+
+async function createReviewCases(
+  message: Message,
+  guildId: string,
+  t: ReturnType<typeof getTranslation>,
+  evidence: ReportEvidence,
+  prepared: PreparedAdjudication,
+): Promise<void> {
+  for (const candidate of evidence.candidates) {
+    const targetMessage = evidence.messagesByIndex.get(candidate.index);
+    const targetId = prepared.targetIdsByCandidate.get(candidate.index);
+    if (!targetMessage || targetId === undefined) continue;
+    const details = targetDetails(candidate.index, prepared.evaluation, prepared.adjudication);
+    const caseId = await CasesService.insert({
+      moderationTargetId: targetId,
+      guildId,
+      authorId: targetMessage.author.id,
+      channelId: targetMessage.channelId,
+      messageId: targetMessage.id,
+      content: targetMessage.content || "(image)",
+      verdict: details.label === "selfpromo" ? 2 : 1,
+      confidence: details.confidence,
+      platform: details.label === "selfpromo" ? platformNumber(candidate.content) : 0,
+      reason: details.reason,
+      actionTaken: t.aiMod.action_alert_only,
+      resolved: false,
+      resolvedBy: null,
+      resolvedAction: null,
+    });
+    await ModerationRunsService.setTargetAction(targetId, "review", "pending");
+    await sendFlaggedAlert(
+      message,
+      guildId,
+      t,
+      toFlaggedCandidate(candidate, targetMessage, details),
+      t.aiMod.action_alert_only,
+      caseId,
+    );
+  }
 }
 
 export async function handleModMention(message: Message): Promise<void> {
@@ -82,8 +288,36 @@ export async function handleModMention(message: Message): Promise<void> {
     const lang = await LanguageService.getLanguage(guildId);
     const t = getTranslation(lang);
 
-    const candidates = await resolveCandidates(message);
-    if (candidates.length === 0) return;
+    const mode = await ModerationConfigService.getMode(guildId, "ai-mod");
+    const evidence = await collectReportEvidence(message);
+    if (evidence.candidates.length === 0) return;
+
+    const prepared = await prepareAdjudication(message, guildId, mode, evidence, t);
+    if (!prepared) return;
+
+    if (mode !== "shadow") {
+      const effectiveKind =
+        mode === "assisted" && prepared.adjudication.kind === "temporary_action"
+          ? "review"
+          : prepared.adjudication.kind;
+      if (effectiveKind === "auto_violation" || effectiveKind === "temporary_action") {
+        await enforceAiModDecision({
+          report: message,
+          runId: prepared.runId,
+          targetIdsByCandidate: prepared.targetIdsByCandidate,
+          messagesByIndex: evidence.messagesByIndex,
+          adjudication: effectiveKind === prepared.adjudication.kind
+            ? prepared.adjudication
+            : { ...prepared.adjudication, kind: "review" },
+          evaluations: prepared.evaluation,
+        });
+      } else if (effectiveKind === "review") {
+        await createReviewCases(message, guildId, t, evidence, prepared);
+      }
+      return;
+    }
+
+    const candidates = [...evidence.messagesByIndex.values()];
 
     const textCandidates: { index: number; content: string; message: Message }[] = [];
     const imageCandidates: Message[] = [];
@@ -251,35 +485,6 @@ export async function handleModMention(message: Message): Promise<void> {
   }
 }
 
-async function resolveCandidates(message: Message): Promise<Message[]> {
-  // Reply branch: the single replied message.
-  if (message.reference?.messageId) {
-    try {
-      const ref = await message.channel.messages.fetch(message.reference.messageId);
-      if (ref.member?.permissions.has(PermissionFlagsBits.ManageMessages)) return [];
-      return [ref];
-    } catch (e) {
-      logger.warn(`ai-mod: reply fetch failed, falling back to last-10: ${e}`);
-    }
-  }
-  // No-reply branch: last 10, minus reporter and bots.
-  try {
-    const fetched = await message.channel.messages.fetch({ limit: CANDIDATE_LIMIT });
-    const out: Message[] = [];
-    for (const [, m] of fetched) {
-      if (m.id === message.id) continue;
-      if (m.author.id === message.author.id) continue;
-      if (m.author.bot) continue;
-      if (m.member?.permissions.has(PermissionFlagsBits.ManageMessages)) continue;
-      out.push(m);
-    }
-    return out;
-  } catch (e) {
-    logger.warn(`ai-mod: failed to fetch candidates: ${e}`);
-    return [];
-  }
-}
-
 async function persistScamImage(guildId: string, message: Message): Promise<void> {
   const urls: string[] = [];
   for (const att of message.attachments.values()) {
@@ -340,6 +545,7 @@ async function sendFlaggedAlert(
   f: FlaggedCandidate,
   actionLabel: string,
   caseId: number,
+  includeButtons = true,
 ): Promise<void> {
   const logChannelId = await LogChannelService.getLogChannel(guildId);
   if (!logChannelId) {
@@ -367,7 +573,11 @@ async function sendFlaggedAlert(
     },
     t,
   );
-  await (channel as TextChannel).send({ content: ping || undefined, embeds: [embed], components });
+  await (channel as TextChannel).send({
+    content: ping || undefined,
+    embeds: [embed],
+    components: includeButtons ? components : undefined,
+  });
 }
 
 async function sendPrecautionAlert(

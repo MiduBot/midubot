@@ -37,6 +37,51 @@ const downloadFingerprintMock = mock(async () => ({ hash: "fingerprint" }));
 const addImageMock = mock(async () => undefined);
 const isIgnoredMock = mock(async () => false);
 
+const getModeMock = mock(async () => "shadow");
+const listCorrectionContextMock = mock(async () => "");
+const evaluateDualMock = mock(async () => ({
+  primary: {
+    status: "ok",
+    evaluation: {
+      outcome: "violation",
+      confidence: 0.95,
+      targets: [{ candidateIndex: 0, label: "malicious", evidence: [] }],
+      reason: "estafa",
+    },
+  },
+  judge: {
+    status: "ok",
+    evaluation: {
+      outcome: "violation",
+      confidence: 0.95,
+      targets: [{ candidateIndex: 0, label: "malicious", evidence: [] }],
+      reason: "estafa",
+    },
+  },
+  primaryGeneration: null,
+  judgeGeneration: null,
+}));
+const adjudicateMock = mock(() => ({
+  kind: "review",
+  targets: [],
+  reason: "insufficient_agreement",
+}));
+const createRunMock = mock(async (input: { candidates: { index: number }[] }) => ({
+  runId: 42,
+  targetIdsByCandidate: new Map(input.candidates.map((candidate) => [candidate.index, candidate.index + 100])),
+}));
+const setTargetActionMock = mock(async () => {});
+const coordinateDeleteMock = mock(async (_input: unknown, effect: () => Promise<boolean>) => ({
+  executed: true,
+  status: (await effect()) ? "succeeded" : "failed",
+  error: null,
+}));
+const coordinateTimeoutMock = mock(async (_input: unknown, effect: () => Promise<boolean>) => ({
+  executed: true,
+  status: (await effect()) ? "succeeded" : "failed",
+  error: null,
+}));
+
 mock.module("@/core/discord/ignored-channels", () => ({ isIgnored: isIgnoredMock }));
 mock.module("@/features/ai-mod/services/ai-mod-config.service", () => ({ AiModConfigService: configMock }));
 mock.module("@/features/ai-mod/services/mod-role.service", () => ({ ModRoleService: modRoleMock }));
@@ -55,6 +100,20 @@ mock.module("@/features/images", () => ({
 mock.module("@/features/puff", () => ({
   extractPuffContent: (m: { content: string; attachments: { size: number } }) =>
     m.attachments.size > 0 ? { kind: "image", imageUrls: ["x"] } : m.content ? { kind: "text", text: m.content } : null,
+}));
+mock.module("@/features/ai-moderation", () => ({
+  ModerationConfigService: { getMode: getModeMock },
+  ModerationReviewService: { listCorrectionContext: listCorrectionContextMock },
+  ModerationRunsService: {
+    create: createRunMock,
+    setTargetAction: setTargetActionMock,
+  },
+  ModerationActionCoordinator: {
+    delete: coordinateDeleteMock,
+    timeout: coordinateTimeoutMock,
+  },
+  evaluateDual: evaluateDualMock,
+  adjudicate: adjudicateMock,
 }));
 
 import { handleModMention } from "@/features/ai-mod/handlers/mod-mention.handler";
@@ -81,6 +140,24 @@ beforeEach(() => {
   downloadFingerprintMock.mockImplementation(async () => ({ hash: "fingerprint" }));
   addImageMock.mockClear();
   addImageMock.mockImplementation(async () => undefined);
+  getModeMock.mockClear();
+  getModeMock.mockImplementation(async () => "shadow");
+  listCorrectionContextMock.mockClear();
+  evaluateDualMock.mockClear();
+  adjudicateMock.mockClear();
+  adjudicateMock.mockImplementation(() => ({
+    kind: "review",
+    targets: [],
+    reason: "insufficient_agreement",
+  }));
+  createRunMock.mockClear();
+  createRunMock.mockImplementation(async (input: { candidates: { index: number }[] }) => ({
+    runId: 42,
+    targetIdsByCandidate: new Map(input.candidates.map((candidate) => [candidate.index, candidate.index + 100])),
+  }));
+  setTargetActionMock.mockClear();
+  coordinateDeleteMock.mockClear();
+  coordinateTimeoutMock.mockClear();
 });
 
 describe("handleModMention", () => {
@@ -258,6 +335,43 @@ describe("handleModMention", () => {
     const msg = makeReportMessage("r1", { channelMessages: [candidate] });
     await handleModMention(msg);
     expect((candidate.member as unknown as { timeout: (d: number | null, r?: string) => Promise<unknown> }).timeout).not.toHaveBeenCalled();
+  });
+
+  it("uses persisted dual adjudication for autonomous mode", async () => {
+    getModeMock.mockImplementation(async () => "autonomous");
+    adjudicateMock.mockImplementation(() => ({
+      kind: "auto_violation",
+      targets: [{ candidateIndex: 0, label: "malicious" }],
+      reason: "agreement_violation",
+    }) as never);
+    const candidate = createMockMessage({ id: "cand1", content: "send me a DM", channelId: "c1", guildId: "g1" });
+    const msg = makeReportMessage("r1", { channelMessages: [candidate] });
+
+    await handleModMention(msg);
+
+    expect(classifyMock).not.toHaveBeenCalled();
+    expect(evaluateDualMock).toHaveBeenCalledTimes(1);
+    expect(createRunMock).toHaveBeenCalledTimes(1);
+    expect(candidate.delete).toHaveBeenCalledTimes(1);
+    expect(casesMock.insert).toHaveBeenCalledWith(expect.objectContaining({ moderationTargetId: 100 }));
+  });
+
+  it("does not act when moderation run persistence fails", async () => {
+    getModeMock.mockImplementation(async () => "autonomous");
+    createRunMock.mockRejectedValueOnce(new Error("database unavailable"));
+    const candidate = createMockMessage({ id: "cand1", content: "send me a DM", channelId: "c1", guildId: "g1" });
+    const msg = makeReportMessage("r1", { channelMessages: [candidate] });
+    logChannelMock.getLogChannel.mockImplementation(async () => "log-1");
+    const logChannel = createMockTextChannel({ id: "log-1", guildId: "g1" });
+    msg.guild!.channels.fetch = mock(async () => logChannel) as never;
+
+    await handleModMention(msg);
+
+    expect(candidate.delete).not.toHaveBeenCalled();
+    expect((candidate.member as unknown as { timeout: ReturnType<typeof mock> }).timeout).not.toHaveBeenCalled();
+    const payload = JSON.stringify((logChannel.send as ReturnType<typeof mock>).mock.calls[0]?.[0]);
+    expect(payload).toContain("send me a DM");
+    expect(payload).not.toContain("customId");
   });
 });
 

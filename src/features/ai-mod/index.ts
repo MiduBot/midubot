@@ -41,3 +41,15 @@ export { handleSelfpromochannelCommand } from "./commands/selfpromochannel.comma
 export { handleFeedbackButton } from "./handlers/feedback-button.handler";
 
 export { handleModMention } from "./handlers/mod-mention.handler";
+export {
+  collectReportEvidence,
+  type ReportEvidence,
+} from "./services/report-evidence.service";
+export {
+  enforceAiModDecision,
+  type AiModEnforcementInput,
+} from "./services/moderation-enforcement.service";
+export {
+  classifySelfpromoPlatform,
+  type SelfpromoPlatform,
+} from "./services/selfpromo-platform.service";

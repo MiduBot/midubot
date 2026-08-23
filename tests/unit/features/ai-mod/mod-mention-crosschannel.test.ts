@@ -20,6 +20,25 @@ mock.module("@/config/env", () => ({ env: envMock }));
 mock.module("@/core/discord/ignored-channels", () => ({
   isIgnored: mock(async () => false),
 }));
+const getModeMock = mock(async () => "shadow");
+const evaluateDualMock = mock(async () => ({
+  primary: { status: "ok", evaluation: { outcome: "allow", confidence: 0.9, targets: [], reason: "" } },
+  judge: { status: "ok", evaluation: { outcome: "allow", confidence: 0.9, targets: [], reason: "" } },
+  primaryGeneration: null,
+  judgeGeneration: null,
+}));
+const adjudicateMock = mock(() => ({ kind: "auto_allow", targets: [], reason: "agreement_allow" }));
+const createRunMock = mock(async (input: { candidates: { index: number }[] }) => ({
+  runId: 1,
+  targetIdsByCandidate: new Map(input.candidates.map((candidate) => [candidate.index, candidate.index + 1])),
+}));
+mock.module("@/features/ai-moderation", () => ({
+  ModerationConfigService: { getMode: getModeMock },
+  ModerationReviewService: { listCorrectionContext: mock(async () => "") },
+  ModerationRunsService: { create: createRunMock, setTargetAction: mock(async () => {}) },
+  evaluateDual: evaluateDualMock,
+  adjudicate: adjudicateMock,
+}));
 
 const configMock = { isEnabled: mock(async () => true) };
 const modRoleMock = { hasRole: mock(async () => true) };
@@ -101,6 +120,11 @@ beforeEach(() => {
   imagesMock.ImageHashService.downloadFingerprint.mockClear();
   imagesMock.ImageHashService.downloadFingerprint.mockImplementation(async () => null);
   logChannelMock.getLogChannel.mockImplementation(async () => "log-1");
+  getModeMock.mockClear();
+  getModeMock.mockImplementation(async () => "shadow");
+  evaluateDualMock.mockClear();
+  adjudicateMock.mockClear();
+  createRunMock.mockClear();
 });
 
 function setupReport() {
