@@ -8,6 +8,8 @@ import {
   type Message,
 } from "discord.js";
 import { env } from "@/config/env";
+import { LanguageService } from "@/features/language";
+import { getTranslation } from "@/i18n";
 import { classify, type ClassifyResult } from "../services/classifier.service";
 import { JobGuardCasesService } from "../services/cases.service";
 import { safeDelete } from "@/core/discord/moderation";
@@ -26,7 +28,13 @@ import type {
   EvaluationAttempt,
   ModerationCandidate,
   ModerationMode,
+  DualEvaluationResult,
 } from "@/features/ai-moderation";
+import { buildReviewCard } from "@/features/ai-moderation/services/review-card.service";
+import {
+  prepareEvidenceFiles,
+  type AttachmentPayload,
+} from "@/features/ai-moderation/services/evidence-files.service";
 import {
   buildJobGuardPrompts,
   buildJobGuardUserPrompt,
@@ -213,7 +221,24 @@ async function enforceAdjudicated(
 
   if (effectiveKind === "auto_allow" && !shouldAudit()) return;
   if (effectiveKind === "technical_error") {
-    await notifyMods(message, content, notificationResult, false, 0, false);
+    const candidate = candidates[0];
+    const targetId = targetIdsByCandidate.get(0);
+    if (candidate && targetId !== undefined) {
+      let files: AttachmentPayload[] = [];
+      try {
+        files = await prepareEvidenceFiles(candidate.attachments);
+      } catch (error) {
+        logger.warn(`job-guard: failed to prepare evidence files: ${error}`);
+      }
+      await notifyMods(message, content, notificationResult, false, 0, false, {
+        targetId,
+        evaluation,
+        attachments: candidate.attachments,
+        files,
+      });
+    } else {
+      await notifyMods(message, content, notificationResult, false, 0, false);
+    }
     return;
   }
 
@@ -235,7 +260,18 @@ async function enforceAdjudicated(
   } catch (error) {
     logger.warn(`job-guard: failed to insert adjudicated review case: ${error}`);
   }
-  await notifyMods(message, content, notificationResult, false, caseId);
+  let files: AttachmentPayload[] = [];
+  try {
+    files = await prepareEvidenceFiles(candidates[0]?.attachments ?? []);
+  } catch (error) {
+    logger.warn(`job-guard: failed to prepare evidence files: ${error}`);
+  }
+  await notifyMods(message, content, notificationResult, false, caseId, false, {
+    targetId,
+    evaluation,
+    attachments: candidates[0]?.attachments ?? [],
+    files,
+  });
 }
 
 export async function enforceJobGuard(message: Message): Promise<void> {
@@ -319,6 +355,12 @@ async function notifyMods(
   deleted: boolean,
   caseId: number,
   includeButtons = true,
+  rich?: {
+    targetId: number;
+    evaluation: DualEvaluationResult;
+    attachments: ModerationCandidate["attachments"];
+    files: AttachmentPayload[];
+  },
 ): Promise<void> {
   try {
     const guildId = message.guild!.id;
@@ -332,6 +374,32 @@ async function notifyMods(
 
     const logChannel = await message.guild!.channels.fetch(logChannelId);
     if (!logChannel || logChannel.type !== ChannelType.GuildText) return;
+
+    if (rich) {
+      const lang = await LanguageService.getLanguage(guildId);
+      const t = getTranslation(lang);
+      const { embed, components } = buildReviewCard(
+        {
+          targetId: rich.targetId,
+          caseRef: `job-guard:${caseId > 0 ? caseId : `target-${rich.targetId}`}`,
+          feature: "job-guard",
+          content: originalText,
+          reportContent: null,
+          attachments: rich.attachments,
+          primary: rich.evaluation.primary,
+          judge: rich.evaluation.judge,
+          actionLabel: deleted ? "Message deleted" : "Review required",
+          pending: true,
+        },
+        t,
+      );
+      await logChannel.send({
+        embeds: [embed],
+        components,
+        files: rich.files,
+      });
+      return;
+    }
 
     // ponytail: alerta en español hardcoded; i18n si algún día hace falta.
     const embed = new EmbedBuilder()

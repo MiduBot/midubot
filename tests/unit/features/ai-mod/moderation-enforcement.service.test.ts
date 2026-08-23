@@ -24,6 +24,22 @@ mock.module("@/features/ai-mod/services/cases.service", () => ({
   CasesService: { insert: insertCaseMock },
 }));
 
+const prepareEvidenceFilesMock = mock(async () => []);
+mock.module("@/features/ai-moderation/services/evidence-files.service", () => ({
+  prepareEvidenceFiles: prepareEvidenceFilesMock,
+}));
+
+const logSendMock = mock(async () => ({}));
+mock.module("@/features/log-channel", () => ({
+  LogChannelService: { getLogChannel: mock(async () => "log-1") },
+}));
+mock.module("@/features/language", () => ({
+  LanguageService: { getLanguage: mock(async () => "es") },
+}));
+mock.module("@/features/ai-mod/services/notify-targets.service", () => ({
+  NotifyTargetsService: { list: mock(async () => []) },
+}));
+
 const coordinateDeleteMock = mock(async (_input: unknown, effect: () => Promise<boolean>) => ({
   executed: true,
   status: (await effect()) ? "succeeded" : "failed",
@@ -74,6 +90,10 @@ function setup() {
   (member as unknown as { isCommunicationDisabled: () => boolean }).isCommunicationDisabled = () => false;
   const report = createMockMessage({ guildId: "g1" });
   report.guild!.members.fetch = mock(async () => member);
+  report.guild!.channels.fetch = mock(async () => ({
+    type: 0,
+    send: logSendMock,
+  }) as never);
   const target1 = createMockMessage({ id: "target-1", author: { id: "author-1" }, content: "spam one" });
   const target2 = createMockMessage({ id: "target-2", author: { id: "author-1" }, content: "spam two" });
   const messagesByIndex = new Map([[0, target1], [1, target2]]);
@@ -87,6 +107,8 @@ beforeEach(() => {
   bypassMock.mockImplementation(async () => false);
   insertCaseMock.mockClear();
   insertCaseMock.mockImplementation(async () => 1);
+  prepareEvidenceFilesMock.mockClear();
+  logSendMock.mockClear();
   coordinateDeleteMock.mockClear();
   coordinateDeleteMock.mockImplementation(async (_input: unknown, effect: () => Promise<boolean>) => ({
     executed: true,
@@ -147,6 +169,9 @@ describe("enforceAiModDecision", () => {
     expect(coordinateTimeoutMock.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
       durationMs: 60 * 60 * 1000,
     }));
+    expect(prepareEvidenceFilesMock).toHaveBeenCalled();
+    expect(logSendMock).toHaveBeenCalled();
+    expect(JSON.stringify(logSendMock.mock.calls[0]?.[0])).toContain("modreview_101_confirm");
   });
 
   it("does not act on review decisions", async () => {

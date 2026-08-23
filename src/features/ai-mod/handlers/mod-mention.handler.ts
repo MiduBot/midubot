@@ -37,6 +37,11 @@ import {
   buildPrecautionEmbed,
   buildPingString,
 } from "../services/alert-builder.service";
+import { buildReviewCard } from "@/features/ai-moderation/services/review-card.service";
+import {
+  prepareEvidenceFiles,
+  type AttachmentPayload,
+} from "@/features/ai-moderation/services/evidence-files.service";
 import {
   adjudicate,
   evaluateDual,
@@ -244,15 +249,69 @@ async function createReviewCases(
       resolvedAction: null,
     });
     await ModerationRunsService.setTargetAction(targetId, "review", "pending");
-    await sendFlaggedAlert(
-      message,
+    await sendRichReviewAlert({
+      report: message,
       guildId,
       t,
-      toFlaggedCandidate(candidate, targetMessage, details),
-      t.aiMod.action_alert_only,
+      reportContent: evidence.reportContent,
+      candidate,
+      targetMessage,
+      targetId,
+      primary: prepared.evaluation.primary,
+      judge: prepared.evaluation.judge,
       caseId,
-    );
+    });
   }
+}
+
+async function sendRichReviewAlert(input: {
+  report: Message;
+  guildId: string;
+  t: ReturnType<typeof getTranslation>;
+  reportContent: string;
+  candidate: ModerationCandidate;
+  targetMessage: Message;
+  targetId: number;
+  primary: DualEvaluationResult["primary"];
+  judge: DualEvaluationResult["judge"];
+  caseId: number;
+}): Promise<void> {
+  const logChannelId = await LogChannelService.getLogChannel(input.guildId);
+  if (!logChannelId) {
+    logger.warn(`ai-mod: review target ${input.targetId} but no log channel`);
+    return;
+  }
+  const channel = await input.report.guild?.channels.fetch(logChannelId).catch(() => null);
+  if (!channel || channel.type !== ChannelType.GuildText) return;
+
+  let files: AttachmentPayload[] = [];
+  try {
+    files = await prepareEvidenceFiles(input.candidate.attachments);
+  } catch (error) {
+    logger.warn(`ai-mod: failed to prepare review evidence: ${error}`);
+  }
+  const targets = await NotifyTargetsService.list(input.guildId);
+  const { embed, components } = buildReviewCard(
+    {
+      targetId: input.targetId,
+      caseRef: `ai-mod:${input.caseId}`,
+      feature: "ai-mod",
+      content: input.targetMessage.content || "(image)",
+      reportContent: input.reportContent,
+      attachments: input.candidate.attachments,
+      primary: input.primary,
+      judge: input.judge,
+      actionLabel: input.t.aiMod.action_alert_only,
+      pending: true,
+    },
+    input.t,
+  );
+  await (channel as TextChannel).send({
+    content: buildPingString(targets) || undefined,
+    embeds: [embed],
+    components,
+    files,
+  });
 }
 
 export async function handleModMention(message: Message): Promise<void> {

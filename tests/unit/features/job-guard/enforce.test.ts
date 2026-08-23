@@ -11,6 +11,10 @@ const mockEnv = {
   JOB_CHANNEL_ID: "chan-1",
 };
 
+mock.module("@/features/language", () => ({
+  LanguageService: { getLanguage: mock(async () => "es") },
+}));
+
 mock.module("@/config/env", () => ({
   env: mockEnv,
 }));
@@ -302,7 +306,8 @@ describe("enforceJobGuard", () => {
       moderationTargetId: 101,
       resolved: false,
     }));
-    expect(JSON.stringify(sendMock.mock.calls[0]?.[0])).toContain("jobguard_7_correct");
+    expect(JSON.stringify(sendMock.mock.calls[0]?.[0])).toContain("modreview_101_confirm");
+    expect(JSON.stringify(sendMock.mock.calls[0]?.[0])).toContain("modreview_101_correct");
   });
 
   it("creates a pending review with original content and buttons", async () => {
@@ -325,7 +330,8 @@ describe("enforceJobGuard", () => {
     }));
     const payload = JSON.stringify(sendMock.mock.calls[0]?.[0]);
     expect(payload).toContain("se busca dev");
-    expect(payload).toContain("jobguard_7_correct");
+    expect(payload).toContain("modreview_101_confirm");
+    expect(payload).not.toContain("jobguard_7_");
   });
 
   it("persists technical errors without deleting", async () => {

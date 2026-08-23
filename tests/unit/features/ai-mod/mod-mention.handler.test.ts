@@ -356,6 +356,27 @@ describe("handleModMention", () => {
     expect(casesMock.insert).toHaveBeenCalledWith(expect.objectContaining({ moderationTargetId: 100 }));
   });
 
+  it("uses rich shared review cards for new autonomous review cases", async () => {
+    getModeMock.mockImplementation(async () => "autonomous");
+    adjudicateMock.mockImplementation(() => ({
+      kind: "review",
+      targets: [{ candidateIndex: 0, label: "malicious" }],
+      reason: "target_conflict",
+    }) as never);
+    logChannelMock.getLogChannel.mockImplementation(async () => "log-1");
+    const logChannel = createMockTextChannel({ id: "log-1", guildId: "g1" });
+    const candidate = createMockMessage({ id: "cand1", content: "send me a DM", channelId: "c1", guildId: "g1" });
+    const msg = makeReportMessage("r1", { channelMessages: [candidate] });
+    msg.guild!.channels.fetch = mock(async () => logChannel) as never;
+
+    await handleModMention(msg);
+
+    const payload = JSON.stringify((logChannel.send as ReturnType<typeof mock>).mock.calls[0]?.[0]);
+    expect(payload).toContain("modreview_100_confirm");
+    expect(payload).not.toContain("aimod_1_correct");
+    expect(payload).toContain("send me a DM");
+  });
+
   it("does not act when moderation run persistence fails", async () => {
     getModeMock.mockImplementation(async () => "autonomous");
     createRunMock.mockRejectedValueOnce(new Error("database unavailable"));

@@ -7,6 +7,15 @@ const { db, setQueryResult, setTableResult, setMutationResult, clear } =
   createMockDb();
 mock.module("@/db/connection", () => ({ db }));
 
+const reviewButtonMock = mock(async () => {});
+const reviewModalMock = mock(async () => {});
+mock.module("@/features/ai-moderation/handlers/review-button.handler", () => ({
+  handleModerationReviewButton: reviewButtonMock,
+}));
+mock.module("@/features/ai-moderation/handlers/review-modal.handler", () => ({
+  handleModerationReviewModal: reviewModalMock,
+}));
+
 import { handleMessageCreate } from "@/events/message-create";
 import { handleInteractionCreate } from "@/events/interaction-create";
 import { handleMessageDelete } from "@/events/message-delete";
@@ -16,6 +25,8 @@ describe("handleMessageCreate", () => {
   beforeEach(() => {
     clear();
     appCache.clear();
+    reviewButtonMock.mockClear();
+    reviewModalMock.mockClear();
   });
 
   it("ignores bot messages", async () => {
@@ -180,6 +191,34 @@ describe("handleInteractionCreate", () => {
       followUp: mock(() => Promise.resolve()),
     } as never;
     await handleInteractionCreate(interaction);
+  });
+
+  it("routes shared moderation review buttons and modals before legacy IDs", async () => {
+    const button = {
+      isMessageContextMenuCommand: () => false,
+      isStringSelectMenu: () => false,
+      isButton: () => true,
+      customId: "modreview_41_confirm",
+      isModalSubmit: () => false,
+      isUserContextMenuCommand: () => false,
+      replied: false,
+      deferred: false,
+    } as never;
+    await handleInteractionCreate(button);
+    expect(reviewButtonMock).toHaveBeenCalledWith(button);
+
+    const modal = {
+      isMessageContextMenuCommand: () => false,
+      isStringSelectMenu: () => false,
+      isButton: () => false,
+      isModalSubmit: () => true,
+      customId: "modreview_correct:41",
+      isUserContextMenuCommand: () => false,
+      replied: false,
+      deferred: false,
+    } as never;
+    await handleInteractionCreate(modal);
+    expect(reviewModalMock).toHaveBeenCalledWith(modal);
   });
 
   it("handles errors gracefully", async () => {
