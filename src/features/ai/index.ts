@@ -1,6 +1,6 @@
 export { handleAiCommand } from "./commands/ai.command";
 export { handleChatbot } from "./handlers/chatbot.handler";
-export { handleChatFeedbackButton } from "./handlers/chat-feedback.handler";
+export { handleChatFeedbackReaction } from "./handlers/chat-feedback-reaction.handler";
 export {
   AiChatConfigService,
   type AiChatMode,
