@@ -48,4 +48,34 @@ describe("ChatFeedbackService", () => {
       await ChatFeedbackService.rate("request", "requester", "up"),
     ).toBe("already_rated");
   });
+
+  it("rates response message for its requester", async () => {
+    setQueryResult("findFirst", {
+      requesterId: "user",
+      rating: null,
+    });
+    setMutationResult("update", { rowsAffected: 1 });
+
+    await expect(
+      ChatFeedbackService.rateResponse("response", "user", "up"),
+    ).resolves.toBe("recorded");
+  });
+
+  it("rejects non-requester and duplicate response ratings", async () => {
+    setQueryResult("findFirst", {
+      requesterId: "other",
+      rating: null,
+    });
+    await expect(
+      ChatFeedbackService.rateResponse("response", "user", "down"),
+    ).resolves.toBe("forbidden");
+
+    setQueryResult("findFirst", {
+      requesterId: "user",
+      rating: "up",
+    });
+    await expect(
+      ChatFeedbackService.rateResponse("response", "user", "down"),
+    ).resolves.toBe("already_rated");
+  });
 });

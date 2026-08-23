@@ -57,4 +57,32 @@ export class ChatFeedbackService {
       ? "recorded"
       : "already_rated";
   }
+
+  static async rateResponse(
+    responseMessageId: string,
+    userId: string,
+    rating: ChatFeedbackRating,
+  ): Promise<ChatFeedbackResult> {
+    const row = await db.query.aiChatFeedbackTable.findFirst({
+      where: eq(aiChatFeedbackTable.responseMessageId, responseMessageId),
+    });
+    if (!row) return "not_found";
+    if (row.requesterId !== userId) return "forbidden";
+    if (row.rating) return "already_rated";
+
+    const result = await db
+      .update(aiChatFeedbackTable)
+      .set({ rating, ratedBy: userId, ratedAt: new Date() })
+      .where(
+        and(
+          eq(aiChatFeedbackTable.responseMessageId, responseMessageId),
+          isNull(aiChatFeedbackTable.rating),
+        ),
+      );
+    return Number(
+      (result as unknown as { rowsAffected?: number }).rowsAffected ?? 0,
+    ) > 0
+      ? "recorded"
+      : "already_rated";
+  }
 }
