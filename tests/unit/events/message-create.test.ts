@@ -28,6 +28,35 @@ mock.module("@/features/language", () => ({
   LanguageService: { getLanguage: async () => "es" },
 }));
 
+const enforceJobGuardMock = mock(async () => {});
+mock.module("@/features/job-guard", () => ({
+  enforceJobGuard: enforceJobGuardMock,
+}));
+mock.module("@/features/unique-channel", () => ({
+  enforceUniqueChannel: async () => {},
+}));
+mock.module("@/features/link-cooldown", () => ({
+  enforceLinkCooldown: async () => {},
+}));
+mock.module("@/features/link-newcomer", () => ({
+  enforceLinkNewcomer: async () => {},
+}));
+mock.module("@/features/line-filter", () => ({
+  applyLineFilter: async () => {},
+}));
+mock.module("@/features/ai-mod", () => ({
+  handleModMention: async () => {},
+}));
+mock.module("@/features/ai", () => ({
+  handleChatbot: async () => {},
+}));
+mock.module("@/features/images", () => ({
+  monitorImages: async () => {},
+}));
+mock.module("@/core/discord/moderation", () => ({
+  containsImageUrl: () => false,
+}));
+
 import { handleMessageCreate } from "@/events/message-create";
 
 describe("handleMessageCreate — eval command permission bypass", () => {
@@ -62,5 +91,28 @@ describe("handleMessageCreate — eval command permission bypass", () => {
     const msg = createMockMessage({ content: "m!note something" });
     await handleMessageCreate(msg, {} as any);
     expect(otherCommand.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not wait for background job-guard enforcement", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    enforceJobGuardMock.mockClear();
+    enforceJobGuardMock.mockImplementationOnce(() => pending);
+
+    const messagePromise = handleMessageCreate(
+      createMockMessage({ content: "se busca dev" }),
+      {} as any,
+    );
+    const result = await Promise.race([
+      messagePromise.then(() => "resolved"),
+      new Promise((resolve) => setTimeout(() => resolve("timeout"), 25)),
+    ]);
+
+    expect(result).toBe("resolved");
+    expect(enforceJobGuardMock).toHaveBeenCalledTimes(1);
+    release();
+    await pending;
   });
 });

@@ -80,7 +80,9 @@ export async function handleMessageCreate(
     await enforceLinkNewcomer(message);
     await enforceLinkCooldown(message);
     await applyLineFilter(message, client);
-    await enforceJobGuard(message);
+    void enforceJobGuard(message).catch((e) => {
+      logger.error("Error in enforceJobGuard", e);
+    });
     // ai-mod may wait a long time for the LLM; do not block the rest of the pipeline.
     void handleModMention(message).catch((e) => {
       logger.error("Error in handleModMention", e);

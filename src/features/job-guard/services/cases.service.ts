@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 export type FeedbackAction = "correct" | "incorrect";
 
 export interface CaseInsertPayload {
+  moderationTargetId?: number | null;
   guildId: string;
   authorId: string;
   channelId: string;
@@ -14,9 +15,12 @@ export interface CaseInsertPayload {
   confidence: number;
   reason: string;
   deleted: boolean;
+  resolved?: boolean;
+  resolvedBy?: string | null;
+  resolvedAction?: "auto" | null;
 }
 
-export interface CaseRow extends CaseInsertPayload {
+export interface CaseRow extends Omit<CaseInsertPayload, "resolvedAction"> {
   id: number;
   resolved: boolean;
   resolvedBy: string | null;
