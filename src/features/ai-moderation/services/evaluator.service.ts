@@ -40,6 +40,16 @@ function parseAttempt(
   return parseModelEvaluation(attempt.result.text, policy, candidates);
 }
 
+function normalizeSettledAttempt(
+  settled: PromiseSettledResult<AIGenerationAttempt>,
+): AIGenerationAttempt {
+  if (settled.status === "fulfilled") return settled.value;
+  return {
+    status: "provider_error",
+    error: settled.reason instanceof Error ? settled.reason.message : String(settled.reason),
+  };
+}
+
 async function runEvaluation(input: DualEvaluationInput): Promise<DualEvaluationResult> {
   const messages: ChatTurn[] = [{ role: "user", content: input.userPrompt }];
   const options = {
@@ -47,10 +57,12 @@ async function runEvaluation(input: DualEvaluationInput): Promise<DualEvaluation
     temperature: 0,
     timeoutMs: 180_000,
   };
-  const [primaryAttempt, judgeAttempt] = await Promise.all([
+  const [primarySettled, judgeSettled] = await Promise.allSettled([
     AIClientService.chatMessagesAttempt(input.primarySystemPrompt, messages, options),
     AIClientService.chatMessagesAttempt(input.judgeSystemPrompt, messages, options),
   ]);
+  const primaryAttempt = normalizeSettledAttempt(primarySettled);
+  const judgeAttempt = normalizeSettledAttempt(judgeSettled);
 
   return {
     primary: parseAttempt(primaryAttempt, input.policy, input.candidates),

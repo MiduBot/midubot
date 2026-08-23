@@ -172,6 +172,23 @@ describe("evaluateDual", () => {
     expect(result.judgeGeneration).toBeNull();
   });
 
+  it("preserves timeout status with null generation metadata", async () => {
+    attemptQueue = [
+      { status: "timeout", error: "generation timed out" },
+      generation(allow()),
+    ];
+
+    const result = await evaluateDual(baseInput);
+
+    expect(result.primary).toEqual({
+      status: "timeout",
+      error: "generation timed out",
+    });
+    expect(result.primaryGeneration).toBeNull();
+    expect(result.judge.status).toBe("ok");
+    expect(result.judgeGeneration?.text).toBe(allow());
+  });
+
   it("runs calls in parallel but serializes complete dual evaluations", async () => {
     let releaseFirst!: () => void;
     let releaseSecond!: () => void;
@@ -230,5 +247,78 @@ describe("evaluateDual", () => {
 
     releaseSecond();
     await second;
+  });
+
+  it("holds the queue until a rejected call's sibling settles", async () => {
+    let releaseSibling!: () => void;
+    const siblingGate = new Promise<void>((resolve) => {
+      releaseSibling = resolve;
+    });
+    let markRejected!: () => void;
+    const rejectionStarted = new Promise<void>((resolve) => {
+      markRejected = resolve;
+    });
+
+    chatMessagesAttemptImpl = async (systemPrompt: unknown) => {
+      switch (systemPrompt) {
+        case "first primary":
+          markRejected();
+          throw new Error("unexpected primary rejection");
+        case "first judge":
+          await siblingGate;
+          return generation(allow("first judge allow"));
+        default:
+          return generation(allow("second evaluation allow"));
+      }
+    };
+
+    const first = evaluateDual({
+      ...baseInput,
+      primarySystemPrompt: "first primary",
+      judgeSystemPrompt: "first judge",
+    }).then(
+      (result) => ({ status: "resolved" as const, result }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    );
+    const second = evaluateDual({
+      ...baseInput,
+      primarySystemPrompt: "second primary",
+      judgeSystemPrompt: "second judge",
+    });
+
+    await rejectionStarted;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    let outcomes:
+      | [Awaited<typeof first>, Awaited<typeof second>]
+      | undefined;
+    try {
+      expect(
+        chatMessagesAttemptMock.mock.calls.map((call) => String(call[0])),
+      ).toEqual(["first primary", "first judge"]);
+    } finally {
+      releaseSibling();
+      outcomes = await Promise.all([first, second]);
+    }
+
+    const [firstOutcome, secondResult] = outcomes;
+    expect(firstOutcome.status).toBe("resolved");
+    if (firstOutcome.status !== "resolved") {
+      throw new Error(`evaluateDual rejected: ${String(firstOutcome.error)}`);
+    }
+    expect(firstOutcome.result.primary).toEqual({
+      status: "provider_error",
+      error: "unexpected primary rejection",
+    });
+    expect(firstOutcome.result.primaryGeneration).toBeNull();
+    expect(firstOutcome.result.judge.status).toBe("ok");
+    expect(firstOutcome.result.judgeGeneration?.text).toBe(
+      allow("first judge allow"),
+    );
+    expect(secondResult.primary.status).toBe("ok");
+    expect(secondResult.judge.status).toBe("ok");
+    expect(
+      chatMessagesAttemptMock.mock.calls.map((call) => String(call[0])),
+    ).toEqual(["first primary", "first judge", "second primary", "second judge"]);
   });
 });
