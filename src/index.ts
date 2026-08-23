@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { Client, GatewayIntentBits } from "discord.js";
+import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { env } from "@/config/env";
 import { logger } from "@/core/logger";
 import {
@@ -16,14 +16,17 @@ import { handleClientReady } from "@/events/client-ready";
 import { handleMessageCreate } from "@/events/message-create";
 import { handleInteractionCreate } from "@/events/interaction-create";
 import { handleMessageDelete } from "@/events/message-delete";
+import { handleChatFeedbackReaction } from "@/features/ai";
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
   ],
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
 
 const instanceId = createInstanceId();
@@ -54,6 +57,10 @@ client.on("interactionCreate", (interaction) =>
 );
 
 client.on("messageDelete", (deleted) => handleMessageDelete(deleted));
+
+client.on("messageReactionAdd", (reaction, user) =>
+  void handleChatFeedbackReaction(reaction, user),
+);
 
 function shutdown(signal: string): void {
   if (shuttingDown) return;

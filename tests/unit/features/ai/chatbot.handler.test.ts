@@ -147,6 +147,9 @@ describe("handleChatbot", () => {
       channelId: null,
     }));
     const msg = makeMsg({ mentioned: true });
+    const responseEdit = mock(async () => {});
+    (msg.reply as unknown as { mockImplementation: (fn: () => Promise<unknown>) => void })
+      .mockImplementation(async () => ({ id: "response", edit: responseEdit }));
     await handleChatbot(msg);
     expect(chatMessagesMock).toHaveBeenCalled();
     expect(msg.reply).toHaveBeenCalled();
@@ -154,6 +157,8 @@ describe("handleChatbot", () => {
       .mock.calls[0][0] as { content: string; allowedMentions: { parse: string[] } };
     expect(payload.content).toBe("jaja");
     expect(payload.allowedMentions.parse).toEqual([]);
+    expect(payload).not.toHaveProperty("components");
+    expect(responseEdit).not.toHaveBeenCalled();
     expect(feedbackRecordMock).toHaveBeenCalled();
     const fetch = msg.channel.messages.fetch as unknown as {
       mock: { calls: unknown[][] };

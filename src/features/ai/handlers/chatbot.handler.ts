@@ -1,10 +1,4 @@
-import {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  type Attachment,
-  type Message,
-} from "discord.js";
+import type { Attachment, Message } from "discord.js";
 import { env } from "@/config/env";
 import { logger } from "@/core/logger";
 import { isIgnored } from "@/core/discord/ignored-channels";
@@ -317,21 +311,6 @@ async function loadHistory(message: Message): Promise<HistoryMessage[]> {
   return [...missingAncestors, ...history];
 }
 
-function feedbackRow(messageId: string): ActionRowBuilder<ButtonBuilder> {
-  return new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`chatfb_${messageId}_up`)
-      .setLabel("Útil")
-      .setEmoji("👍")
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`chatfb_${messageId}_down`)
-      .setLabel("No útil")
-      .setEmoji("👎")
-      .setStyle(ButtonStyle.Secondary),
-  );
-}
-
 async function replyTo(
   message: Message,
   botId: string,
@@ -392,7 +371,6 @@ async function replyTo(
       outputTokens: result.outputTokens,
       finishReason: result.finishReason,
     });
-    await response.edit({ components: [feedbackRow(message.id)] });
   } catch (error) {
     logger.warn(`chatbot: failed to record response metrics: ${error}`);
   }
