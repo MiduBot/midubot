@@ -8,6 +8,11 @@ import {
   AiChatConfigService,
   type AiChatMode,
 } from "../services/ai-chat-config.service";
+import {
+  AiChatAllowService,
+  type AiChatAllowEntry,
+  type AiChatAllowType,
+} from "../services/ai-chat-allow.service";
 
 const TEST_SYSTEM = "Responde de forma breve y concisa. No uses markdown.";
 const TEST_USER = "Di 'La IA está funcionando correctamente' y nada más.";
@@ -66,6 +71,10 @@ export async function handleAiCommand(
       await handleMode(message, guildId, args.slice(1), t, prefix);
       return;
     }
+    if (sub === "allow" || sub === "canuse") {
+      await handleAllow(message, guildId, args.slice(1), t, prefix);
+      return;
+    }
 
     await message.reply(usage);
   } catch (error) {
@@ -85,12 +94,209 @@ async function replyStatus(
     ? `<#${config.channelId}>`
     : t.ai.status_no_channel;
   const mode = config.mode === "mentions" ? t.ai.mode_mentions : t.ai.mode_ambient;
+  const allowEntries = await AiChatAllowService.list(guildId);
+  const allow =
+    allowEntries.length === 0
+      ? t.ai.status_allow_anyone
+      : allowEntries.map((entry) => formatAllowEntry(entry, t)).join(", ");
   await message.reply(
     t.ai.status
       .replace("{state}", state)
       .replace("{channel}", channel)
-      .replace("{mode}", mode),
+      .replace("{mode}", mode)
+      .replace("{allow}", allow),
   );
+}
+
+type Translations = ReturnType<typeof getTranslation>;
+
+function formatAllowEntry(entry: AiChatAllowEntry, t: Translations): string {
+  if (entry.type === "special" && entry.entityId === "superdev") {
+    return t.ai.allow_superdev;
+  }
+  if (entry.type === "special" && entry.entityId === "mods") {
+    return t.ai.allow_mods;
+  }
+  if (entry.type === "role") return `<@&${entry.entityId}>`;
+  return `<@${entry.entityId}>`;
+}
+
+type ParsedAllowArg =
+  | { kind: "any" }
+  | { kind: "target"; type: AiChatAllowType; entityId: string }
+  | { kind: "invalid"; raw: string };
+
+function parseAllowArg(
+  raw: string,
+  message: Message,
+): ParsedAllowArg {
+  const token = raw.toLowerCase();
+  if (token === "any" || token === "everyone" || token === "all" || token === "*") {
+    return { kind: "any" };
+  }
+  if (token === "superdev" || token === "superdevs") {
+    return { kind: "target", type: "special", entityId: "superdev" };
+  }
+  if (token === "mod" || token === "mods" || token === "staff") {
+    return { kind: "target", type: "special", entityId: "mods" };
+  }
+
+  const roleMention = raw.match(/^<@&(\d+)>$/);
+  if (roleMention) {
+    return { kind: "target", type: "role", entityId: roleMention[1] };
+  }
+  const userMention = raw.match(/^<@!?(\d+)>$/);
+  if (userMention) {
+    return { kind: "target", type: "member", entityId: userMention[1] };
+  }
+  if (/^\d{17,19}$/.test(raw)) {
+    if (message.guild?.roles?.cache.has(raw)) {
+      return { kind: "target", type: "role", entityId: raw };
+    }
+    return { kind: "target", type: "member", entityId: raw };
+  }
+  return { kind: "invalid", raw };
+}
+
+function targetKey(type: AiChatAllowType, entityId: string): string {
+  return `${type}:${entityId}`;
+}
+
+async function handleAllow(
+  message: Message,
+  guildId: string,
+  args: string[],
+  t: Translations,
+  prefix: string,
+): Promise<void> {
+  const usage = t.ai.allow_usage.replace("{prefix}", prefix);
+  const sub = args[0]?.toLowerCase();
+
+  if (!sub || sub === "list" || sub === "ls" || sub === "l") {
+    const list = await AiChatAllowService.list(guildId);
+    if (list.length === 0) {
+      await message.reply(t.ai.allow_anyone);
+      return;
+    }
+    await message.reply({
+      embeds: [
+        {
+          color: 0x0099ff,
+          title: t.ai.allow_list_title,
+          description: list
+            .map((entry) => `• ${formatAllowEntry(entry, t)}`)
+            .join("\n"),
+        },
+      ],
+    });
+    return;
+  }
+
+  if (
+    sub === "any" ||
+    sub === "reset" ||
+    sub === "everyone" ||
+    sub === "all" ||
+    sub === "clear" ||
+    sub === "off"
+  ) {
+    await AiChatAllowService.clear(guildId);
+    await message.reply(t.ai.allow_cleared);
+    return;
+  }
+
+  const isRemove =
+    sub === "remove" || sub === "rm" || sub === "del" || sub === "delete";
+  const isAdd = sub === "add" || sub === "a" || sub === "+";
+  const rawTargets = isAdd || isRemove ? args.slice(1) : args;
+
+  if (rawTargets.length === 0) {
+    await message.reply(isAdd || isRemove ? t.ai.allow_empty_add : usage);
+    return;
+  }
+
+  const parsed = rawTargets.map((raw) => parseAllowArg(raw, message));
+  const invalid = parsed.filter((item) => item.kind === "invalid");
+  const any = parsed.some((item) => item.kind === "any");
+  const targets = parsed.filter(
+    (item): item is Extract<ParsedAllowArg, { kind: "target" }> =>
+      item.kind === "target",
+  );
+
+  if (invalid.length > 0) {
+    await message.reply(
+      t.ai.allow_invalid.replace(
+        "{targets}",
+        invalid.map((item) => `\`${item.raw}\``).join(", "),
+      ),
+    );
+    return;
+  }
+
+  if (any) {
+    if (isRemove || targets.length > 0) {
+      await message.reply(t.ai.allow_any_mixed.replace("{prefix}", prefix));
+      return;
+    }
+    await AiChatAllowService.clear(guildId);
+    await message.reply(t.ai.allow_cleared);
+    return;
+  }
+
+  if (targets.length === 0) {
+    await message.reply(t.ai.allow_empty_add);
+    return;
+  }
+
+  const unique = new Map<string, Extract<ParsedAllowArg, { kind: "target" }>>();
+  for (const target of targets) {
+    unique.set(targetKey(target.type, target.entityId), target);
+  }
+
+  if (isRemove) {
+    const removed: string[] = [];
+    const missing: string[] = [];
+    for (const target of unique.values()) {
+      const ok = await AiChatAllowService.remove(
+        guildId,
+        target.type,
+        target.entityId,
+      );
+      const label = formatAllowEntry(target, t);
+      if (ok) removed.push(label);
+      else missing.push(label);
+    }
+    const lines: string[] = [];
+    if (removed.length > 0) {
+      lines.push(t.ai.allow_removed.replace("{targets}", removed.join(", ")));
+    }
+    if (missing.length > 0) {
+      lines.push(t.ai.allow_not_found.replace("{targets}", missing.join(", ")));
+    }
+    await message.reply(lines.join("\n") || usage);
+    return;
+  }
+
+  const added: string[] = [];
+  const already: string[] = [];
+  for (const target of unique.values()) {
+    const result = await AiChatAllowService.add(
+      guildId,
+      target.type,
+      target.entityId,
+    );
+    const label = formatAllowEntry(target, t);
+    if (result === "added") added.push(label);
+    else already.push(label);
+  }
+  const lines: string[] = [];
+  if (added.length > 0) {
+    lines.push(t.ai.allow_added.replace("{targets}", added.join(", ")));
+  }
+  if (already.length > 0) {
+    lines.push(t.ai.allow_already.replace("{targets}", already.join(", ")));
+  }
+  await message.reply(lines.join("\n") || usage);
 }
 
 async function handleMode(

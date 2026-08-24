@@ -18,6 +18,26 @@ export const aiChatConfigTable = sqliteTable("ai_chat_config", {
     .default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const aiChatAllowlistTable = sqliteTable(
+  "ai_chat_allowlist",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    guildId: text("guild_id").notNull(),
+    type: text("type", { enum: ["member", "role", "special"] }).notNull(),
+    entityId: text("entity_id").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    guildTypeEntityUnq: uniqueIndex("ai_chat_allowlist_guild_type_entity_unq").on(
+      table.guildId,
+      table.type,
+      table.entityId,
+    ),
+  }),
+);
+
 export const aiChatFeedbackTable = sqliteTable(
   "ai_chat_feedback",
   {

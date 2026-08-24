@@ -19,6 +19,9 @@ import {
   CHATBOT_TIMEOUT_MS,
   CHATBOT_USER_COOLDOWN_MS,
 } from "../constants";
+import { LanguageService } from "@/features/language";
+import { getTranslation } from "@/i18n";
+import { AiChatAllowService } from "../services/ai-chat-allow.service";
 import { AiChatConfigService } from "../services/ai-chat-config.service";
 import {
   buildChatMessages,
@@ -400,7 +403,7 @@ async function drainChannel(channelId: string, first: PendingTurn): Promise<void
           !!config?.enabled &&
           (current.priority ||
             (config.mode !== "mentions" && config.channelId === channelId));
-        if (allowed) {
+        if (allowed && (await AiChatAllowService.canUse(current.message))) {
           await replyTo(current.message, current.botId, current.priority);
         }
       } catch (error) {
@@ -483,6 +486,19 @@ export async function handleChatbot(message: Message): Promise<void> {
     if (!respond) return;
 
     const priority = mentionedBot || replyToBot;
+    if (!(await AiChatAllowService.canUse(message))) {
+      if (priority) {
+        if (!consumeRateLimit(guildId, message.author.id, now)) return;
+        const lang = await LanguageService.getLanguage(guildId);
+        const t = getTranslation(lang);
+        await message.reply({
+          content: t.ai.chat_forbidden,
+          allowedMentions: { parse: [], repliedUser: true },
+        });
+      }
+      return;
+    }
+
     if (!consumeRateLimit(guildId, message.author.id, now)) {
       return;
     }

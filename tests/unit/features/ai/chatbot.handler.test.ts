@@ -16,6 +16,9 @@ const configMock = {
     mode: "ambient" as const,
   })),
 };
+const allowMock = {
+  canUse: mock(async () => true),
+};
 function aiResult(text: string) {
   return {
     text,
@@ -33,6 +36,12 @@ const isIgnoredMock = mock(async () => false);
 
 mock.module("@/features/ai/services/ai-chat-config.service", () => ({
   AiChatConfigService: configMock,
+}));
+mock.module("@/features/ai/services/ai-chat-allow.service", () => ({
+  AiChatAllowService: allowMock,
+}));
+mock.module("@/features/language", () => ({
+  LanguageService: { getLanguage: mock(async () => "es") },
 }));
 mock.module("@/features/ai-mod", () => ({
   AIClientService: { chatMessagesDetailed: chatMessagesMock },
@@ -106,6 +115,7 @@ describe("handleChatbot", () => {
   beforeEach(() => {
     resetChatbotMemory();
     configMock.getConfig.mockClear();
+    allowMock.canUse.mockClear();
     chatMessagesMock.mockClear();
     hasRoleMock.mockClear();
     isIgnoredMock.mockClear();
@@ -118,6 +128,7 @@ describe("handleChatbot", () => {
     feedbackRecordMock.mockClear();
     hasRoleMock.mockImplementation(async () => false);
     isIgnoredMock.mockImplementation(async () => false);
+    allowMock.canUse.mockImplementation(async () => true);
     mockEnv.AI_API_URL = "https://ai.test/v1";
     mockEnv.AI_API_KEY = "test-key";
     mockEnv.AI_CHAT_VISION_ENABLED = false;
@@ -434,5 +445,31 @@ describe("handleChatbot", () => {
     });
     await handleChatbot(next);
     expect(chatMessagesMock).not.toHaveBeenCalled();
+  });
+
+  it("tells the user they cannot talk when they mention the bot", async () => {
+    allowMock.canUse.mockImplementation(async () => false);
+    configMock.getConfig.mockImplementation(async () => ({
+      enabled: true,
+      channelId: null,
+    }));
+    const msg = makeMsg({ mentioned: true });
+    await handleChatbot(msg);
+    expect(chatMessagesMock).not.toHaveBeenCalled();
+    const payload = (msg.reply as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls[0][0] as { content: string };
+    expect(payload.content).toContain("permiso");
+  });
+
+  it("stays quiet in ambient mode when the author is not allowed", async () => {
+    allowMock.canUse.mockImplementation(async () => false);
+    configMock.getConfig.mockImplementation(async () => ({
+      enabled: true,
+      channelId: CHANNEL,
+    }));
+    const msg = makeMsg({ content: "buenas" });
+    await handleChatbot(msg);
+    expect(chatMessagesMock).not.toHaveBeenCalled();
+    expect(msg.reply).not.toHaveBeenCalled();
   });
 });

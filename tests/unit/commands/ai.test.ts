@@ -13,6 +13,12 @@ const configMock = {
   clearChannel: mock(async () => {}),
   setMode: mock(async () => {}),
 };
+const allowMock = {
+  list: mock(async () => [] as Array<{ type: string; entityId: string }>),
+  add: mock(async () => "added" as const),
+  remove: mock(async () => true),
+  clear: mock(async () => {}),
+};
 const chatMock = mock(async () => ({
   text: "pong",
   model: "chat-model",
@@ -24,6 +30,9 @@ const chatMock = mock(async () => ({
 
 mock.module("@/features/ai/services/ai-chat-config.service", () => ({
   AiChatConfigService: configMock,
+}));
+mock.module("@/features/ai/services/ai-chat-allow.service", () => ({
+  AiChatAllowService: allowMock,
 }));
 mock.module("@/features/ai-mod", () => ({
   AIClientService: { chatMessagesDetailed: chatMock },
@@ -40,12 +49,20 @@ describe("handleAiCommand", () => {
     configMock.setChannel.mockClear();
     configMock.clearChannel.mockClear();
     configMock.setMode.mockClear();
+    allowMock.list.mockClear();
+    allowMock.add.mockClear();
+    allowMock.remove.mockClear();
+    allowMock.clear.mockClear();
     chatMock.mockClear();
     configMock.getConfig.mockImplementation(async () => ({
       enabled: false,
       channelId: null,
       mode: "ambient",
     }));
+    allowMock.list.mockImplementation(async () => []);
+    allowMock.add.mockImplementation(async () => "added");
+    allowMock.remove.mockImplementation(async () => true);
+    allowMock.clear.mockImplementation(async () => {});
     chatMock.mockImplementation(async () => ({
       text: "pong",
       model: "chat-model",
@@ -166,5 +183,60 @@ describe("handleAiCommand", () => {
     const msg = createMockMessage({ guildId: null });
     await handleAiCommand(msg, ["on"], "m!");
     expect(configMock.setEnabled).not.toHaveBeenCalled();
+  });
+
+  it("lists allow anyone when empty", async () => {
+    const msg = createMockMessage();
+    await handleAiCommand(msg, ["allow"], "m!");
+    expect(allowMock.list).toHaveBeenCalledWith("g1");
+    const reply = (msg.reply as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls[0][0] as string;
+    expect(reply).toContain("Cualquiera");
+  });
+
+  it("adds users, roles, superdev and mods via canuse", async () => {
+    const msg = createMockMessage();
+    await handleAiCommand(
+      msg,
+      ["canuse", "add", "<@111111111111111111>", "<@&222222222222222222>", "superdev", "mods"],
+      "m!",
+    );
+    expect(allowMock.add).toHaveBeenCalledTimes(4);
+    expect(allowMock.add).toHaveBeenCalledWith("g1", "member", "111111111111111111");
+    expect(allowMock.add).toHaveBeenCalledWith("g1", "role", "222222222222222222");
+    expect(allowMock.add).toHaveBeenCalledWith("g1", "special", "superdev");
+    expect(allowMock.add).toHaveBeenCalledWith("g1", "special", "mods");
+  });
+
+  it("adds mods without the add keyword", async () => {
+    const msg = createMockMessage();
+    await handleAiCommand(msg, ["allow", "mods"], "m!");
+    expect(allowMock.add).toHaveBeenCalledWith("g1", "special", "mods");
+  });
+
+  it("clears the allowlist with any", async () => {
+    const msg = createMockMessage();
+    await handleAiCommand(msg, ["allow", "any"], "m!");
+    expect(allowMock.clear).toHaveBeenCalledWith("g1");
+  });
+
+  it("removes an allow entry", async () => {
+    const msg = createMockMessage();
+    await handleAiCommand(msg, ["allow", "remove", "mods"], "m!");
+    expect(allowMock.remove).toHaveBeenCalledWith("g1", "special", "mods");
+  });
+
+  it("rejects mixing any with other targets", async () => {
+    const msg = createMockMessage();
+    await handleAiCommand(msg, ["allow", "add", "any", "mods"], "m!");
+    expect(allowMock.clear).not.toHaveBeenCalled();
+    expect(allowMock.add).not.toHaveBeenCalled();
+  });
+
+  it("treats allow add any as open to everyone", async () => {
+    const msg = createMockMessage();
+    await handleAiCommand(msg, ["canuse", "add", "any"], "m!");
+    expect(allowMock.clear).toHaveBeenCalledWith("g1");
+    expect(allowMock.add).not.toHaveBeenCalled();
   });
 });
