@@ -13,7 +13,13 @@ export interface HistoryMessage {
   hasImage: boolean;
   hasAttachment: boolean;
   images?: HistoryImage[];
+  attachments?: HistoryAttachment[];
+  stickerNames?: string[];
   priority?: boolean;
+  current?: boolean;
+  direct?: boolean;
+  replyToId?: string | null;
+  replyToBot?: boolean;
 }
 
 export interface HistoryImage {
@@ -21,8 +27,20 @@ export interface HistoryImage {
   mediaType: string;
 }
 
+export interface HistoryAttachment {
+  name: string;
+  mediaType: string | null;
+}
+
 function stripWrappers(text: string): string {
   return text.replace(/<\/?message\b[^>]*>/gi, "");
+}
+
+function escapeText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function escapeAttr(value: string): string {
@@ -37,22 +55,47 @@ function escapeAttr(value: string): string {
 }
 
 function attachmentHint(msg: HistoryMessage): string {
+  const details = msg.attachments
+    ?.slice(0, 4)
+    .map((attachment) => {
+      const kind = attachment.mediaType?.startsWith("image/")
+        ? "imagen"
+        : "archivo";
+      const mediaType = attachment.mediaType
+        ? ` (${attachment.mediaType})`
+        : "";
+      return `[${kind}: ${attachment.name}${mediaType}]`;
+    });
+  const stickers = msg.stickerNames
+    ?.slice(0, 3)
+    .map((name) => `[sticker: ${name}]`);
+  const hints = [...(details ?? []), ...(stickers ?? [])];
+  if (hints.length > 0) return hints.join(" ");
   if (msg.hasImage) return "[imagen]";
   if (msg.hasAttachment) return "[archivo]";
   return "";
 }
 
 function bodyOf(msg: HistoryMessage): string {
-  const raw = stripWrappers(msg.content).replace(/\s+/g, " ").trim();
+  const raw = stripWrappers(msg.content).replace(/\r\n?/g, "\n").trim();
   const hint = attachmentHint(msg);
-  const combined = [raw, hint].filter(Boolean).join(" ");
+  const combined = [raw, hint].filter(Boolean).join("\n");
   if (!combined) return "";
   if (combined.length <= CHATBOT_MESSAGE_MAX_CHARS) return combined;
   return `${combined.slice(0, CHATBOT_MESSAGE_MAX_CHARS - 1)}…`;
 }
 
 function wrap(msg: HistoryMessage, body: string): string {
-  return `<message author="${escapeAttr(msg.authorName)}" id="${escapeAttr(msg.id)}">${body}</message>`;
+  const attrs = [
+    `author="${escapeAttr(msg.authorName)}"`,
+    `id="${escapeAttr(msg.id)}"`,
+    msg.current ? 'current="true"' : "",
+    msg.priority ? 'priority="true"' : "",
+    msg.direct != null ? `direct="${msg.direct}"` : "",
+    msg.replyToId ? `reply_to="${escapeAttr(msg.replyToId)}"` : "",
+    msg.replyToBot ? 'reply_to_bot="true"' : "",
+  ].filter(Boolean);
+  return `<message ${attrs.join(" ")}>${escapeText(body)}</message>`;
 }
 
 function toTurn(
@@ -108,8 +151,16 @@ export function buildChatMessages(
     : undefined;
   const candidates = history.flatMap((message, index) => {
     const turn = toTurn(message, botId, message.id === imageMessageId);
-    return turn ? [{ index, priority: !!message.priority, turn }] : [];
+    return turn
+      ? [{ index, priority: !!message.priority, current: !!message.current, turn }]
+      : [];
   });
+  if (
+    history.some((message) => message.current) &&
+    !candidates.some((candidate) => candidate.current)
+  ) {
+    return [];
+  }
   const newestFirst = [
     ...candidates.filter((candidate) => candidate.priority).reverse(),
     ...candidates.filter((candidate) => !candidate.priority).reverse(),
@@ -124,12 +175,22 @@ export function buildChatMessages(
     selected.push(candidate);
   }
 
-  selected.sort((a, b) => a.index - b.index);
+  const selectedIndexes = new Set(selected.map((candidate) => candidate.index));
+  const coherent = selected.filter((candidate) => {
+    if (candidate.priority || candidate.turn.role !== "assistant") return true;
+    const previousUser = candidates
+      .slice(0, candidates.indexOf(candidate))
+      .reverse()
+      .find((item) => item.turn.role === "user");
+    return !previousUser || selectedIndexes.has(previousUser.index);
+  });
+  coherent.sort((a, b) => a.index - b.index);
 
   const merged: ChatTurn[] = [];
-  for (const { turn } of selected) {
+  for (const { priority, turn } of coherent) {
     const last = merged[merged.length - 1];
     if (
+      !priority &&
       last &&
       last.role === turn.role &&
       typeof last.content === "string" &&
@@ -150,6 +211,12 @@ export function mergeReferenced(
   referenced: HistoryMessage | null,
 ): HistoryMessage[] {
   if (!referenced) return history;
-  if (history.some((m) => m.id === referenced.id)) return history;
-  return [referenced, ...history];
+  if (history.some((m) => m.id === referenced.id)) {
+    return history.map((message) =>
+      message.id === referenced.id
+        ? { ...message, priority: true }
+        : message,
+    );
+  }
+  return [{ ...referenced, priority: true }, ...history];
 }

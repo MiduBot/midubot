@@ -15,6 +15,7 @@ function input(overrides: Partial<ShouldRespondInput> = {}): ShouldRespondInput 
     isAiChannel: false,
     mentionedBot: false,
     replyToBot: false,
+    replyToOther: false,
     mentionsModRole: false,
     ignored: false,
     lastHumanMessageAt: now - 60_000,
@@ -60,6 +61,22 @@ describe("shouldRespond", () => {
 
   it("responds to a reply to the bot in any channel", () => {
     expect(shouldRespond(input({ replyToBot: true }))).toBe(true);
+  });
+
+  it("does not interrupt a reply to another user unless the bot is mentioned", () => {
+    expect(
+      shouldRespond(
+        input({
+          isAiChannel: true,
+          replyToOther: true,
+          lastBotReplyAt: now - 1_000,
+          lastBotReplyUserId: "u1",
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      shouldRespond(input({ replyToOther: true, mentionedBot: true })),
+    ).toBe(true);
   });
 
   it("does not jump into other channels without mention or reply", () => {

@@ -27,7 +27,10 @@ import {
   type HistoryMessage,
 } from "../services/context";
 import { ChatFeedbackService } from "../services/chat-feedback.service";
-import { sanitizeChatbotOutput } from "../services/sanitize";
+import {
+  isChatbotNoReply,
+  sanitizeChatbotOutput,
+} from "../services/sanitize";
 
 export interface ShouldRespondInput {
   enabled: boolean;
@@ -35,6 +38,7 @@ export interface ShouldRespondInput {
   isAiChannel: boolean;
   mentionedBot: boolean;
   replyToBot: boolean;
+  replyToOther: boolean;
   mentionsModRole: boolean;
   ignored: boolean;
   lastHumanMessageAt: number | null;
@@ -49,6 +53,7 @@ export function shouldRespond(input: ShouldRespondInput): boolean {
   if (input.mentionsModRole) return false;
 
   if (input.mentionedBot || input.replyToBot) return true;
+  if (input.replyToOther) return false;
   if (!input.ambientEnabled) return false;
   if (input.ignored && !input.isAiChannel) return false;
   if (!input.isAiChannel) return false;
@@ -80,6 +85,7 @@ interface PendingTurn {
   message: Message;
   botId: string;
   priority: boolean;
+  replyToBot: boolean;
 }
 
 const lastHumanAt = new Map<string, number>();
@@ -198,7 +204,13 @@ function imageAttachments(message: Message): HistoryImage[] {
     .slice(0, 2);
 }
 
-function toHistory(message: Message, priority = false): HistoryMessage {
+function toHistory(
+  message: Message,
+  options: Pick<
+    HistoryMessage,
+    "priority" | "current" | "direct" | "replyToBot"
+  > = {},
+): HistoryMessage {
   return {
     id: message.id,
     content: message.content ?? "",
@@ -208,7 +220,15 @@ function toHistory(message: Message, priority = false): HistoryMessage {
     hasImage: hasImageAttachment(message),
     hasAttachment: message.attachments.size > 0,
     images: imageAttachments(message),
-    priority,
+    attachments: [...message.attachments.values()].map((attachment) => ({
+      name: attachment.name ?? "archivo",
+      mediaType: imageMediaType(attachment) ?? attachment.contentType ?? null,
+    })),
+    stickerNames: [...(message.stickers?.values() ?? [])].map(
+      (sticker) => sticker.name,
+    ),
+    replyToId: message.reference?.messageId ?? null,
+    ...options,
   };
 }
 
@@ -262,14 +282,25 @@ async function previousHumanTimestamp(
   }
 }
 
-async function loadHistory(message: Message): Promise<HistoryMessage[]> {
+async function loadHistory(
+  message: Message,
+  direct: boolean,
+  replyToBot: boolean,
+  historyLimit: number,
+): Promise<HistoryMessage[]> {
   const channel = message.channel;
-  let history: HistoryMessage[] = [toHistory(message)];
+  const currentOptions = {
+    priority: true,
+    current: true,
+    direct,
+    replyToBot,
+  };
+  let history: HistoryMessage[] = [toHistory(message, currentOptions)];
 
   if (channel && "messages" in channel && channel.messages?.fetch) {
     try {
       const fetched = await channel.messages.fetch({
-        limit: Math.max(1, CHATBOT_CONTEXT_MESSAGES - 1),
+        limit: Math.max(1, historyLimit - 1),
         before: message.id,
       });
       const items = [...fetched.values()].sort(
@@ -277,7 +308,7 @@ async function loadHistory(message: Message): Promise<HistoryMessage[]> {
       );
       history = items.map((item) => toHistory(item));
       if (!history.some((m) => m.id === message.id)) {
-        history.push(toHistory(message));
+        history.push(toHistory(message, currentOptions));
       }
     } catch (error) {
       logger.warn(`chatbot: failed to fetch history: ${error}`);
@@ -295,13 +326,13 @@ async function loadHistory(message: Message): Promise<HistoryMessage[]> {
           : await cursor.channel.messages.fetch(cursor.reference.messageId);
       if (!ref || !("author" in ref)) break;
       cursor = ref as Message;
-      replyChain.unshift(toHistory(cursor, true));
+      replyChain.unshift(toHistory(cursor, { priority: true }));
     } catch {
       break;
     }
   }
 
-  const current = toHistory(message, true);
+  const current = toHistory(message, currentOptions);
   const priorityMessages = [...replyChain, current];
   const priorityById = new Map(priorityMessages.map((item) => [item.id, item]));
   history = history.map((item) => priorityById.get(item.id) ?? item);
@@ -316,8 +347,18 @@ async function replyTo(
   message: Message,
   botId: string,
   notifyFailure: boolean,
+  replyToBot: boolean,
+  isAiChannel: boolean,
 ): Promise<void> {
-  const history = await loadHistory(message);
+  const historyLimit = isAiChannel
+    ? CHATBOT_CONTEXT_MESSAGES
+    : Math.min(CHATBOT_CONTEXT_MESSAGES, 8);
+  const history = await loadHistory(
+    message,
+    notifyFailure,
+    replyToBot,
+    historyLimit,
+  );
   const turns = buildChatMessages(
     history,
     botId,
@@ -334,8 +375,13 @@ async function replyTo(
     });
   }
 
+  const channelName =
+    "name" in message.channel && typeof message.channel.name === "string"
+      ? message.channel.name
+      : message.channelId;
+  const requestSystemPrompt = `${CHATBOT_SYSTEM_PROMPT}\n\nContexto verificable de esta solicitud:\n- Fecha UTC: ${new Date(message.createdTimestamp ?? Date.now()).toISOString()}\n- Canal: ${JSON.stringify(channelName)}`;
   const result = await AIClientService.chatMessagesDetailed(
-    CHATBOT_SYSTEM_PROMPT,
+    requestSystemPrompt,
     turns,
     {
       temperature: CHATBOT_TEMPERATURE,
@@ -343,7 +389,9 @@ async function replyTo(
       maxOutputTokens: CHATBOT_MAX_OUTPUT_TOKENS,
     },
   );
-  const content = result ? sanitizeChatbotOutput(result.text) : "";
+  const noReply = result ? isChatbotNoReply(result.text) : false;
+  if (noReply && !notifyFailure) return;
+  const content = result && !noReply ? sanitizeChatbotOutput(result.text) : "";
   if (!result || !content) {
     if (notifyFailure) {
       await message.reply({
@@ -402,7 +450,13 @@ async function drainChannel(channelId: string, first: PendingTurn): Promise<void
           (current.priority ||
             (config.mode !== "mentions" && config.channelId === channelId));
         if (allowed && (await AiChatAllowService.canUse(current.message))) {
-          await replyTo(current.message, current.botId, current.priority);
+          await replyTo(
+            current.message,
+            current.botId,
+            current.priority,
+            current.replyToBot,
+            config.channelId === channelId,
+          );
         }
       } catch (error) {
         logger.error("Error in chatbot reply", error);
@@ -435,19 +489,21 @@ export async function handleChatbot(message: Message): Promise<void> {
     if (!botId) return;
 
     const mentionedBot = !!message.mentions?.users?.has(botId);
-    let replyToBot = message.mentions?.repliedUser?.id === botId;
-    if (!replyToBot && message.reference?.messageId) {
+    let replyTargetAuthorId = message.mentions?.repliedUser?.id ?? null;
+    if (!replyTargetAuthorId && message.reference?.messageId) {
       try {
         const ref =
           "fetchReference" in message &&
           typeof message.fetchReference === "function"
             ? await message.fetchReference()
             : null;
-        if (ref?.author?.id === botId) replyToBot = true;
+        replyTargetAuthorId = ref?.author?.id ?? null;
       } catch {
         // referenced message gone
       }
     }
+    const replyToBot = replyTargetAuthorId === botId;
+    const replyToOther = replyTargetAuthorId != null && !replyToBot;
     const mentionsModRole = await mentionsConfiguredModRole(guildId, message);
 
     let ignored = false;
@@ -472,6 +528,7 @@ export async function handleChatbot(message: Message): Promise<void> {
       isAiChannel,
       mentionedBot,
       replyToBot,
+      replyToOther,
       mentionsModRole,
       ignored,
       lastHumanMessageAt,
@@ -496,6 +553,7 @@ export async function handleChatbot(message: Message): Promise<void> {
       message,
       botId,
       priority,
+      replyToBot,
     });
   } catch (error) {
     logger.error("Error in handleChatbot", error);

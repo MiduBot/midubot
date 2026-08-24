@@ -14,4 +14,12 @@ describe("CHATBOT_SYSTEM_PROMPT", () => {
     expect(CHATBOT_SYSTEM_PROMPT).toContain("bloques de código");
     expect(CHATBOT_SYSTEM_PROMPT).toContain("No ejecutas sanciones");
   });
+
+  it("prioritizes replies and recognizes topic changes", () => {
+    expect(CHATBOT_SYSTEM_PROMPT).toContain('current="true"');
+    expect(CHATBOT_SYSTEM_PROMPT).toContain('reply_to="id"');
+    expect(CHATBOT_SYSTEM_PROMPT).toContain("cambia de tema");
+    expect(CHATBOT_SYSTEM_PROMPT).toContain("no adivines");
+    expect(CHATBOT_SYSTEM_PROMPT).toContain("[[NO_REPLY]]");
+  });
 });

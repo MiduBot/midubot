@@ -72,6 +72,9 @@ function makeMsg(opts: {
   roleIds?: string[];
   authorId?: string;
   attachments?: Array<{ url: string; contentType?: string }>;
+  createdTimestamp?: number;
+  repliedUserId?: string;
+  referenceMessage?: ReturnType<typeof createMockMessage>;
 } = {}) {
   const msg = createMockMessage({
     id: opts.id,
@@ -86,18 +89,29 @@ function makeMsg(opts: {
   const roleIds = opts.roleIds ?? [];
   Object.assign(msg, {
     client: { user: { id: BOT_ID } },
-    createdTimestamp: Date.now(),
+    createdTimestamp: opts.createdTimestamp ?? Date.now(),
     mentions: {
       users: mentionsUsers,
       roles: {
         keys: () => roleIds,
         size: roleIds.length,
       },
-      repliedUser: opts.replyToBot ? { id: BOT_ID } : null,
+      repliedUser: opts.replyToBot
+        ? { id: BOT_ID }
+        : opts.repliedUserId
+          ? { id: opts.repliedUserId }
+          : null,
     },
-    reference: null,
+    reference: opts.referenceMessage
+      ? { messageId: opts.referenceMessage.id }
+      : null,
     member: { displayName: "Ada" },
   });
+  if (opts.referenceMessage) {
+    Object.assign(msg, {
+      fetchReference: mock(async () => opts.referenceMessage),
+    });
+  }
   Object.assign(msg.channel, {
     sendTyping: mock(async () => {}),
     messages: {
@@ -175,9 +189,65 @@ describe("handleChatbot", () => {
       mock: { calls: unknown[][] };
     };
     expect(fetch.mock.calls.at(-1)?.[0]).toEqual({
-      limit: 24,
+      limit: 7,
       before: msg.id,
     });
+  });
+
+  it("prioritizes the replied user message when the bot is mentioned", async () => {
+    configMock.getConfig.mockImplementation(async () => ({
+      enabled: true,
+      channelId: null,
+      mode: "ambient",
+    }));
+    const question = makeMsg({
+      id: "const-question",
+      authorId: "user-a",
+      content: "¿qué hace una const en JavaScript?",
+    });
+    const reply = makeMsg({
+      id: "const-reply",
+      authorId: "user-b",
+      content: "<@bot1> ¿qué le responderías?",
+      mentioned: true,
+      repliedUserId: "user-a",
+      referenceMessage: question,
+    });
+
+    await handleChatbot(reply);
+
+    const sent = JSON.stringify(chatMessagesMock.mock.calls[0][1]);
+    expect(sent).toContain("qué hace una const");
+    expect(sent).toContain('id=\\\"const-question\\\"');
+    expect(sent).toContain('priority=\\\"true\\\"');
+    expect(sent).toContain('current=\\\"true\\\"');
+    expect(sent).toContain('reply_to=\\\"const-question\\\"');
+  });
+
+  it("uses a fetched bot reply as the priority context", async () => {
+    configMock.getConfig.mockImplementation(async () => ({
+      enabled: true,
+      channelId: null,
+      mode: "ambient",
+    }));
+    const botReply = makeMsg({
+      id: "bot-answer",
+      authorId: BOT_ID,
+      content: "Usaría const porque la referencia no cambia.",
+    });
+    Object.assign(botReply.author, { bot: true });
+    const followUp = makeMsg({
+      id: "follow-up",
+      content: "¿y qué pasa con los objetos?",
+      referenceMessage: botReply,
+    });
+
+    await handleChatbot(followUp);
+
+    const sent = JSON.stringify(chatMessagesMock.mock.calls[0][1]);
+    expect(sent).toContain("la referencia no cambia");
+    expect(sent).toContain('reply_to_bot=\\\"true\\\"');
+    expect(chatMessagesMock).toHaveBeenCalledTimes(1);
   });
 
   it("sends image attachments without MIME when vision is enabled", async () => {
@@ -224,6 +294,38 @@ describe("handleChatbot", () => {
     chatMessagesMock.mockImplementation(async () => null);
     const msg = makeMsg({ mentioned: true });
     await handleChatbot(msg);
+    const payload = (msg.reply as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls[0][0] as { content: string };
+    expect(payload.content).toContain("No pude responder");
+  });
+
+  it("stays silent when the model declines an ambient interruption", async () => {
+    configMock.getConfig.mockImplementation(async () => ({
+      enabled: true,
+      channelId: CHANNEL,
+      mode: "ambient",
+    }));
+    chatMessagesMock.mockImplementation(async () => aiResult("[[NO_REPLY]]"));
+    const msg = makeMsg({ content: "sí, luego te paso el repo" });
+
+    await handleChatbot(msg);
+
+    expect(chatMessagesMock).toHaveBeenCalledTimes(1);
+    expect(msg.reply).not.toHaveBeenCalled();
+    expect(feedbackRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("does not silently discard a direct request if the model declines it", async () => {
+    configMock.getConfig.mockImplementation(async () => ({
+      enabled: true,
+      channelId: null,
+      mode: "ambient",
+    }));
+    chatMessagesMock.mockImplementation(async () => aiResult("[[NO_REPLY]]"));
+    const msg = makeMsg({ mentioned: true, content: "<@bot1> ayúdame" });
+
+    await handleChatbot(msg);
+
     const payload = (msg.reply as unknown as { mock: { calls: unknown[][] } })
       .mock.calls[0][0] as { content: string };
     expect(payload.content).toContain("No pude responder");
@@ -277,6 +379,41 @@ describe("handleChatbot", () => {
     const second = makeMsg({ content: "y qué más", authorId: "999999999999999999" });
     await handleChatbot(second);
     expect(chatMessagesMock).not.toHaveBeenCalled();
+  });
+
+  it("does not use sticky mode when the same user replies to someone else", async () => {
+    configMock.getConfig.mockImplementation(async () => ({
+      enabled: true,
+      channelId: CHANNEL,
+      mode: "ambient",
+    }));
+    const now = Date.now();
+    const first = makeMsg({
+      id: "sticky-first",
+      content: "tengo una duda",
+      authorId: "same-user",
+      createdTimestamp: now,
+    });
+    await handleChatbot(first);
+    chatMessagesMock.mockClear();
+
+    const otherUser = makeMsg({
+      id: "other-user-message",
+      content: "te lo paso luego",
+      authorId: "other-user",
+    });
+    const reply = makeMsg({
+      id: "sticky-other-reply",
+      content: "perfecto, gracias",
+      authorId: "same-user",
+      createdTimestamp: now + 9_000,
+      repliedUserId: "other-user",
+      referenceMessage: otherUser,
+    });
+    await handleChatbot(reply);
+
+    expect(chatMessagesMock).not.toHaveBeenCalled();
+    expect(reply.reply).not.toHaveBeenCalled();
   });
 
   it("queues a mention that arrives while a reply is in flight", async () => {

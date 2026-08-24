@@ -1,10 +1,19 @@
 import { describe, it, expect } from "bun:test";
-import { sanitizeChatbotOutput, isolateJokeGif } from "@/features/ai/services/sanitize";
+import {
+  isChatbotNoReply,
+  sanitizeChatbotOutput,
+  isolateJokeGif,
+} from "@/features/ai/services/sanitize";
 import { CHATBOT_OUTPUT_MAX_CHARS } from "@/features/ai/constants";
 
 describe("sanitizeChatbotOutput", () => {
   it("returns empty for blank input", () => {
     expect(sanitizeChatbotOutput("   ")).toBe("");
+  });
+
+  it("turns the ambient no-reply decision into an empty response", () => {
+    expect(isChatbotNoReply("[[NO_REPLY]]")).toBe(true);
+    expect(sanitizeChatbotOutput("[[NO_REPLY]]")).toBe("");
   });
 
   it("neutralizes @everyone and @here", () => {
@@ -31,6 +40,12 @@ describe("sanitizeChatbotOutput", () => {
     const out = sanitizeChatbotOutput("a".repeat(CHATBOT_OUTPUT_MAX_CHARS + 50));
     expect(out.length).toBe(CHATBOT_OUTPUT_MAX_CHARS);
     expect(out.endsWith("…")).toBe(true);
+  });
+
+  it("closes a code fence when truncating inside it", () => {
+    const out = sanitizeChatbotOutput(`\`\`\`ts\n${"a".repeat(2_000)}`);
+    expect(out.length).toBe(CHATBOT_OUTPUT_MAX_CHARS);
+    expect(out.endsWith("…\n```")).toBe(true);
   });
 
   it("returns only the gif URL when a configured joke gif is present", () => {
