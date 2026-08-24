@@ -447,7 +447,7 @@ describe("handleChatbot", () => {
     expect(chatMessagesMock).not.toHaveBeenCalled();
   });
 
-  it("tells the user they cannot talk when they mention the bot", async () => {
+  it("ignores the user when they mention the bot but are not allowed", async () => {
     allowMock.canUse.mockImplementation(async () => false);
     configMock.getConfig.mockImplementation(async () => ({
       enabled: true,
@@ -456,9 +456,7 @@ describe("handleChatbot", () => {
     const msg = makeMsg({ mentioned: true });
     await handleChatbot(msg);
     expect(chatMessagesMock).not.toHaveBeenCalled();
-    const payload = (msg.reply as unknown as { mock: { calls: unknown[][] } })
-      .mock.calls[0][0] as { content: string };
-    expect(payload.content).toContain("permiso");
+    expect(msg.reply).not.toHaveBeenCalled();
   });
 
   it("stays quiet in ambient mode when the author is not allowed", async () => {

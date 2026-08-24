@@ -19,8 +19,6 @@ import {
   CHATBOT_TIMEOUT_MS,
   CHATBOT_USER_COOLDOWN_MS,
 } from "../constants";
-import { LanguageService } from "@/features/language";
-import { getTranslation } from "@/i18n";
 import { AiChatAllowService } from "../services/ai-chat-allow.service";
 import { AiChatConfigService } from "../services/ai-chat-config.service";
 import {
@@ -487,15 +485,6 @@ export async function handleChatbot(message: Message): Promise<void> {
 
     const priority = mentionedBot || replyToBot;
     if (!(await AiChatAllowService.canUse(message))) {
-      if (priority) {
-        if (!consumeRateLimit(guildId, message.author.id, now)) return;
-        const lang = await LanguageService.getLanguage(guildId);
-        const t = getTranslation(lang);
-        await message.reply({
-          content: t.ai.chat_forbidden,
-          allowedMentions: { parse: [], repliedUser: true },
-        });
-      }
       return;
     }
 

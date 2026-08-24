@@ -437,7 +437,6 @@ export const es = {
     allow_superdev: "superdevs",
     allow_mods: "mods (Manage Messages o whitelist)",
     status_allow_anyone: "cualquiera",
-    chat_forbidden: "No tienes permiso para hablar con la IA.",
     feedback_thanks: "Gracias, usaré esta valoración para mejorar.",
     feedback_forbidden: "Solo quien hizo la pregunta puede valorar esta respuesta.",
     feedback_already: "Esta respuesta ya fue valorada.",
