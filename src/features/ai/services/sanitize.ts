@@ -1,8 +1,8 @@
 import {
   CHATBOT_JOKE_GIFS,
   CHATBOT_NO_REPLY,
-  CHATBOT_OUTPUT_MAX_CHARS,
 } from "../constants";
+import { chunkForDiscord } from "@/core/discord/formatters";
 
 export function isChatbotNoReply(text: string): boolean {
   return text.includes(CHATBOT_NO_REPLY);
@@ -33,17 +33,16 @@ export function sanitizeChatbotOutput(text: string): string {
     /(?:https?:\/\/)?(?:www\.)?(?:discord\.gg|discord(?:app)?\.com\/invite)\/\S+/gi,
     "",
   );
-  out = out.replace(/\s{2,}/g, " ").trim();
+  return out.trim();
+}
 
-  if (out.length > CHATBOT_OUTPUT_MAX_CHARS) {
-    const prefix = out.slice(0, CHATBOT_OUTPUT_MAX_CHARS - 1);
-    if ((prefix.match(/```/g)?.length ?? 0) % 2 === 1) {
-      const suffix = "…\n```";
-      out = `${out.slice(0, CHATBOT_OUTPUT_MAX_CHARS - suffix.length)}${suffix}`;
-    } else {
-      out = `${prefix}…`;
+export function splitChatbotOutput(text: string): string[] {
+  let openFence: string | null = null;
+  return chunkForDiscord(text).map((chunk) => {
+    const prefix = openFence ? `${openFence}\n` : "";
+    for (const match of chunk.matchAll(/```[^\n]{0,40}/g)) {
+      openFence = openFence ? null : match[0];
     }
-  }
-
-  return out;
+    return `${prefix}${chunk}${openFence ? "\n```" : ""}`;
+  });
 }

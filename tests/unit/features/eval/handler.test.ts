@@ -81,6 +81,10 @@ describe("chunkForDiscord", () => {
     expect(chunks.join("")).toBe(text);
     for (const c of chunks) expect(c.length).toBeLessThanOrEqual(1900);
   });
+
+  it("prefers a nearby word boundary", () => {
+    expect(chunkForDiscord("12345 67890", 8)).toEqual(["12345 ", "67890"]);
+  });
 });
 
 describe("wrapCodeBlock", () => {

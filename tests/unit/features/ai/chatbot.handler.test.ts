@@ -194,6 +194,32 @@ describe("handleChatbot", () => {
     });
   });
 
+  it("sends long answers across as many messages as needed", async () => {
+    configMock.getConfig.mockImplementation(async () => ({
+      enabled: true,
+      channelId: null,
+      mode: "ambient",
+    }));
+    const answer = "a".repeat(4_500);
+    chatMessagesMock.mockImplementation(async () => aiResult(answer));
+    const msg = makeMsg({ mentioned: true });
+    (msg.reply as unknown as { mockImplementation: (fn: () => Promise<unknown>) => void })
+      .mockImplementation(async () => ({ id: "response" }));
+
+    await handleChatbot(msg);
+
+    const first = (msg.reply as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0][0] as { content: string };
+    const sent = msg.channel.send as unknown as { mock: { calls: unknown[][] } };
+    const rest = sent.mock.calls.map((call) => (call[0] as { content: string }).content);
+    expect([first.content, ...rest].join("")).toBe(answer);
+    expect(rest).toHaveLength(2);
+    expect(chatMessagesMock.mock.calls[0][2]).not.toHaveProperty(
+      "maxOutputTokens",
+    );
+    expect(feedbackRecordMock).toHaveBeenCalledTimes(1);
+  });
+
   it("prioritizes the replied user message when the bot is mentioned", async () => {
     configMock.getConfig.mockImplementation(async () => ({
       enabled: true,

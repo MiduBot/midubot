@@ -1,7 +1,10 @@
 import type { Message, SendableChannels } from "discord.js";
 import { inspect } from "node:util";
 import { safeDelete } from "@/core/discord/moderation";
+import { chunkForDiscord } from "@/core/discord/formatters";
 import { isSuperdev } from "@/config/env";
+
+export { chunkForDiscord } from "@/core/discord/formatters";
 
 export function extractCode(content: string, prefix: string): string {
   const withoutPrefix = content.slice(prefix.length);
@@ -19,20 +22,6 @@ export function redactSecrets(text: string): string {
     result = result.split(value).join("[REDACTED]");
   }
   return result;
-}
-
-const DEFAULT_CHUNK_SIZE = 1900;
-
-export function chunkForDiscord(
-  text: string,
-  size = DEFAULT_CHUNK_SIZE,
-): string[] {
-  if (text.length <= size) return [text];
-  const chunks: string[] = [];
-  for (let i = 0; i < text.length; i += size) {
-    chunks.push(text.slice(i, i + size));
-  }
-  return chunks;
 }
 
 export function wrapCodeBlock(text: string): string {

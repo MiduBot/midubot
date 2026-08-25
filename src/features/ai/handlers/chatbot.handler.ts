@@ -1,4 +1,4 @@
-import type { Attachment, Message } from "discord.js";
+import type { Attachment, Message, SendableChannels } from "discord.js";
 import { env } from "@/config/env";
 import { logger } from "@/core/logger";
 import { isIgnored } from "@/core/discord/ignored-channels";
@@ -8,7 +8,6 @@ import {
   CHATBOT_CONTEXT_MESSAGES,
   CHATBOT_GUILD_RATE_MAX,
   CHATBOT_GUILD_RATE_WINDOW_MS,
-  CHATBOT_MAX_OUTPUT_TOKENS,
   CHATBOT_MENTION_PENDING_MAX,
   CHATBOT_PENDING_MAX,
   CHATBOT_REPLY_CHAIN_DEPTH,
@@ -30,6 +29,7 @@ import { ChatFeedbackService } from "../services/chat-feedback.service";
 import {
   isChatbotNoReply,
   sanitizeChatbotOutput,
+  splitChatbotOutput,
 } from "../services/sanitize";
 
 export interface ShouldRespondInput {
@@ -386,7 +386,6 @@ async function replyTo(
     {
       temperature: CHATBOT_TEMPERATURE,
       timeoutMs: CHATBOT_TIMEOUT_MS,
-      maxOutputTokens: CHATBOT_MAX_OUTPUT_TOKENS,
     },
   );
   const noReply = result ? isChatbotNoReply(result.text) : false;
@@ -402,10 +401,15 @@ async function replyTo(
     return;
   }
 
+  const chunks = splitChatbotOutput(content);
   const response = await message.reply({
-    content,
+    content: chunks[0],
     allowedMentions: { parse: [], repliedUser: true },
   });
+  const channel = message.channel as SendableChannels;
+  for (const chunk of chunks.slice(1)) {
+    await channel.send({ content: chunk, allowedMentions: { parse: [] } });
+  }
 
   try {
     await ChatFeedbackService.record({

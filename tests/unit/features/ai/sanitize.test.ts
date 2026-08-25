@@ -3,8 +3,8 @@ import {
   isChatbotNoReply,
   sanitizeChatbotOutput,
   isolateJokeGif,
+  splitChatbotOutput,
 } from "@/features/ai/services/sanitize";
-import { CHATBOT_OUTPUT_MAX_CHARS } from "@/features/ai/constants";
 
 describe("sanitizeChatbotOutput", () => {
   it("returns empty for blank input", () => {
@@ -36,16 +36,26 @@ describe("sanitizeChatbotOutput", () => {
     expect(out).not.toContain("discord.com/invite");
   });
 
-  it("truncates long output", () => {
-    const out = sanitizeChatbotOutput("a".repeat(CHATBOT_OUTPUT_MAX_CHARS + 50));
-    expect(out.length).toBe(CHATBOT_OUTPUT_MAX_CHARS);
-    expect(out.endsWith("…")).toBe(true);
+  it("preserves long output and code formatting", () => {
+    const text = `\`\`\`ts\n  ${"a".repeat(3_000)}\n\`\`\``;
+    expect(sanitizeChatbotOutput(text)).toBe(text);
   });
 
-  it("closes a code fence when truncating inside it", () => {
-    const out = sanitizeChatbotOutput(`\`\`\`ts\n${"a".repeat(2_000)}`);
-    expect(out.length).toBe(CHATBOT_OUTPUT_MAX_CHARS);
-    expect(out.endsWith("…\n```")).toBe(true);
+  it("splits long output at natural boundaries without losing text", () => {
+    const text = `${"palabra ".repeat(600)}fin`;
+    const chunks = splitChatbotOutput(text);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.join("")).toBe(text);
+    for (const chunk of chunks) expect(chunk.length).toBeLessThanOrEqual(2_000);
+  });
+
+  it("closes and reopens code fences between messages", () => {
+    const text = `antes\n\`\`\`ts\n${"const value = 1;\n".repeat(180)}\`\`\`\ndespués`;
+    const chunks = splitChatbotOutput(text);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks[0].endsWith("\n```")).toBe(true);
+    expect(chunks[1].startsWith("```ts\n")).toBe(true);
+    for (const chunk of chunks) expect(chunk.length).toBeLessThanOrEqual(2_000);
   });
 
   it("returns only the gif URL when a configured joke gif is present", () => {

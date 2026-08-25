@@ -1,5 +1,28 @@
 import { Client, ColorResolvable, EmbedBuilder } from "discord.js";
 
+const DEFAULT_CHUNK_SIZE = 1900;
+
+export function chunkForDiscord(
+  text: string,
+  size = DEFAULT_CHUNK_SIZE,
+): string[] {
+  if (!Number.isInteger(size) || size < 1) throw new RangeError("Invalid chunk size");
+  if (text.length <= size) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > size) {
+    const newline = remaining.lastIndexOf("\n", size);
+    const space = remaining.lastIndexOf(" ", size);
+    const natural = Math.max(newline, space);
+    const end = natural >= size / 2 ? natural + 1 : size;
+    chunks.push(remaining.slice(0, end));
+    remaining = remaining.slice(end);
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
 export function buildEmbed({
   color = 0x0099ff,
   title,

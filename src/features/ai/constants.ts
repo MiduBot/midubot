@@ -15,7 +15,6 @@ export const CHATBOT_JOKE_GIFS: Readonly<Record<string, string>> = {
 export const CHATBOT_CONTEXT_MESSAGES = 25;
 export const CHATBOT_MESSAGE_MAX_CHARS = 2_000;
 export const CHATBOT_HISTORY_MAX_CHARS = 12_000;
-export const CHATBOT_OUTPUT_MAX_CHARS = 1800;
 export const CHATBOT_SILENCE_MS = 15 * 60 * 1000;
 export const CHATBOT_STICKY_MS = 5 * 60 * 1000;
 export const CHATBOT_TIMEOUT_MS = 25_000;
